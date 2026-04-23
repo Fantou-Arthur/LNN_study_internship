@@ -34,7 +34,7 @@ MODELS = {
 
 def apply_sparsity(data, sparsity, mode="random"):
     if sparsity <= 0:
-        return data.clone()
+        return data.clone(), torch.ones_like(data)
     sparse_data = data.clone()
     batch, seq, feat = sparse_data.shape
     if mode == "random":
@@ -44,7 +44,7 @@ def apply_sparsity(data, sparsity, mode="random"):
         mask = torch.zeros(seq, device=data.device)
         mask[::period] = 1
         mask = mask.view(1, seq, 1).expand(batch, seq, feat)
-    return sparse_data * mask.float()
+    return sparse_data * mask.float(), mask
 
 def find_latest_files(model_name, dataset_name):
     base_path = os.path.join("results", model_name, dataset_name)
@@ -128,8 +128,13 @@ def main():
             plt.plot(sample_y, label="True", color="black", linewidth=2, alpha=0.5)
 
         # Signal bruité (sparsity)
-        x_sparse = apply_sparsity(sample_x, sp, args.mode)
+        x_sparse, mask = apply_sparsity(sample_x, sp, args.mode)
         
+        # Données d'entrée en ROUGE (on prend le premier feature pour l'affichage)
+        m = mask[0, :, 0].cpu().numpy()
+        x_in = sample_x[0, :, 0].cpu().numpy()
+        plt.scatter(np.where(m > 0)[0], x_in[m > 0], color='red', s=15, label="Input Data", zorder=5)
+
         # Prédictions
         for m_name, model in loaded_models.items():
             with torch.no_grad():

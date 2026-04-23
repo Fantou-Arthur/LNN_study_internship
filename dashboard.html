@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robustness Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent-color: #38bdf8;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background-color: var(--card-bg);
+            border-right: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .menu-title {
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.1em;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+            margin-top: 20px;
+        }
+
+        .dataset-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-dim);
+            text-align: left;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 5px;
+            font-size: 1rem;
+        }
+
+        .dataset-btn:hover {
+            background-color: #334155;
+            color: var(--text-main);
+        }
+
+        .dataset-btn.active {
+            background-color: var(--accent-color);
+            color: white;
+            font-weight: 500;
+        }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 40px;
+            overflow-y: auto;
+            align-items: center;
+        }
+
+        .header {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        .title-area h1 {
+            margin: 0;
+            font-size: 2rem;
+        }
+
+        .title-area p {
+            margin: 5px 0 0;
+            color: var(--text-dim);
+        }
+
+        .controls {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        input[type=range] {
+            flex: 1;
+            accent-color: var(--accent-color);
+            cursor: pointer;
+        }
+
+        .sparsity-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--accent-color);
+            min-width: 80px;
+        }
+
+        .viz-container {
+            width: 100%;
+            max-width: 1000px;
+            background: white;
+            padding: 10px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            min-height: 500px;
+        }
+
+        #display-image {
+            max-width: 100%;
+            border-radius: 8px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            color: var(--text-dim);
+            text-align: center;
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            backdrop-filter: blur(10px);
+            background: rgba(30, 41, 59, 0.7);
+        }
+
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <span>💠</span> Robustness VIZ
+        </div>
+        
+        <div class="menu-title">Datasets</div>
+        <div id="dataset-list">
+            <!-- Buttons will be injected here -->
+        </div>
+
+        <div style="margin-top: auto; font-size: 0.8rem; color: var(--text-dim);">
+            Denmark Internship Project
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <div class="title-area">
+                <h1 id="current-dataset-name">Sélectionnez un dataset</h1>
+                <p id="current-dataset-desc">Visualisation comparative des prédictions multi-modèles</p>
+            </div>
+        </div>
+
+        <div class="controls glass">
+            <div class="menu-title" style="margin-top: 0">Niveau de Sparsité (Données manquantes)</div>
+            <div class="slider-container">
+                <input type="range" id="sparsity-slider" min="5" max="95" step="5" value="5">
+                <div class="sparsity-value"><span id="sparsity-label">5</span>%</div>
+            </div>
+            <div id="mode-display" style="font-size: 0.8rem; color: var(--text-dim);">Mode: Random</div>
+        </div>
+
+        <div class="viz-container" id="viz-box">
+            <div class="empty-state" id="empty-msg">
+                <p>Aucune image chargée. Assurez-vous d'avoir lancé <code>visualize_predictions.py</code></p>
+            </div>
+            <img src="" id="display-image" style="display: none;">
+        </div>
+    </div>
+
+    <script>
+        const datasets = ["sine", "har", "occupancy", "gesture", "traffic", "physionet"];
+        let currentDataset = "";
+        let currentSparsity = 5;
+
+        const listEl = document.getElementById('dataset-list');
+        const slider = document.getElementById('sparsity-slider');
+        const label = document.getElementById('sparsity-label');
+        const img = document.getElementById('display-image');
+        const emptyMsg = document.getElementById('empty-msg');
+        const dsTitle = document.getElementById('current-dataset-name');
+
+        // Init buttons
+        datasets.forEach(ds => {
+            const btn = document.createElement('button');
+            btn.className = 'dataset-btn';
+            btn.innerText = ds.toUpperCase();
+            btn.onclick = () => selectDataset(ds, btn);
+            listEl.appendChild(btn);
+        });
+
+        function selectDataset(ds, btn) {
+            currentDataset = ds;
+            document.querySelectorAll('.dataset-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            dsTitle.innerText = ds.toUpperCase();
+            updateImage();
+        }
+
+        function updateImage() {
+            if (!currentDataset) return;
+            
+            // Format: results/visualizations/{dataset}/compare_preds_sp{sparsity}_random.png
+            const path = `results/visualizations/${currentDataset}/compare_preds_sp${currentSparsity}_random.png`;
+            
+            img.src = path;
+            img.style.display = 'block';
+            emptyMsg.style.display = 'none';
+
+            img.onerror = () => {
+                img.style.display = 'none';
+                emptyMsg.style.display = 'flex';
+                emptyMsg.innerHTML = `<p>Image non trouvée pour <b>${currentDataset}</b> à <b>${currentSparsity}%</b>.<br>Lancer: <code>python visualize_predictions.py --dataset ${currentDataset}</code></p>`;
+            };
+        }
+
+        slider.oninput = function() {
+            currentSparsity = this.value;
+            label.innerText = this.value;
+            updateImage();
+        };
+
+    </script>
+</body>
+</html>
