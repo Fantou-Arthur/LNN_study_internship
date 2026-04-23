@@ -29,6 +29,22 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
 
+def apply_sparsity(x, percentage, mode='random'):
+    """ Applique Option B : Masquage par valeur individuelle (cellule) """
+    if percentage <= 0: return x
+    if mode == 'random':
+        mask = torch.rand(x.shape) > percentage
+        return x * mask.to(x.dtype).to(x.device)
+    elif mode == 'periodic':
+        N = int(1.0 / (percentage + 1e-6))
+        if N < 1: N = 1
+        mask = torch.ones_like(x)
+        for f in range(x.shape[2]):
+            offset = f % N
+            mask[:, offset::N, f] = 0
+        return x * mask.to(x.device)
+    return x
+
 def generate_sine_data(seq_len=64, num_samples=1000):
     times = np.linspace(0, 10 * np.pi, seq_len)
     def create_split(n):
@@ -174,139 +190,129 @@ def get_input(prompt, default):
     user_input = input(f"{prompt} [{default}]: ")
     return int(user_input) if user_input.strip() else default
 
-def get_bool_input(prompt, default):
-    user_input = input(f"{prompt} (y/n) [{'y' if default else 'n'}]: ").lower().strip()
-    return user_input == 'y' if user_input else default
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="LTC Modern Demo with Sparsity & Persistence")
+    parser.add_argument("--units", type=int, help="Nombre de neurones")
+    parser.add_argument("--layers", type=int, default=1, help="Nombre de couches LTC")
+    parser.add_argument("--epochs", type=int, help="Nombre d'époques")
+    parser.add_argument("--batch_size", type=int, help="Taille du batch")
+    parser.add_argument("--device", type=str)
+    parser.add_argument("--dataset", type=str, default="sine")
+    parser.add_argument("--target_loss", type=float, default=0.0)
+    parser.add_argument("--sparsity_train", type=float, default=0.0)
+    parser.add_argument("--sparsity_test", type=float, default=0.0)
+    parser.add_argument("--sparsity_mode", type=str, default="random")
 
-parser = argparse.ArgumentParser(description="LTC Modern Demo with Fix")
-parser.add_argument("--units", type=int, help="Nombre de neurones")
-parser.add_argument("--layers", type=int, default=1, help="Nombre de couches LTC")
-parser.add_argument("--epochs", type=int, help="Nombre d'époques")
-parser.add_argument("--batch_size", type=int, help="Taille du batch")
-parser.add_argument("--device", type=str)
-parser.add_argument("--dataset", type=str, default="sine")
-parser.add_argument("--target_loss", type=float, default=0.0)
-parser.add_argument("--profile", action="store_true")
-parser.add_argument("--trace", action="store_true")
+    args = parser.parse_args()
 
-args = parser.parse_args()
+    if len(sys.argv) == 1:
+        print(f"\n{C_BOLD}{C_BLUE}--- Configuration du modèle LTC ---{C_END}")
+        num_units = get_input("Nombre de neurones (units)", 16)
+        num_layers = get_input("Nombre de couches (layers)", 1)
+        num_epochs = get_input("Nombre d'époques (epochs)", 50)
+        target_loss = float(input("Perte cible [0.0]: ") or 0.0)
+        batch_size = get_input("Taille du batch", 128)
+        dataset_name = input("Dataset [sine]: ").lower().strip() or "sine"
+        default_device = "cuda" if torch.cuda.is_available() else "cpu"
+        device_type = input(f"Choix du device [{default_device}]: ").lower().strip() or default_device
+        sparsity_train, sparsity_test, sparsity_mode = 0.0, 0.0, "random"
+    else:
+        num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units or 16, args.layers, args.epochs or 50, args.target_loss, args.batch_size or 128, args.dataset
+        device_type = args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
+        sparsity_train, sparsity_test, sparsity_mode = args.sparsity_train, args.sparsity_test, args.sparsity_mode
 
-if len(sys.argv) == 1:
-    print(f"\n{C_BOLD}{C_BLUE}--- Configuration du modèle LTC ---{C_END}")
-    num_units = get_input("Nombre de neurones (units)", 16)
-    num_layers = get_input("Nombre de couches (layers)", 1)
-    num_epochs = get_input("Nombre d'époques (epochs)", 50)
-    target_loss = float(input("Perte cible [0.0]: ") or 0.0)
-    batch_size = get_input("Taille du batch", 128)
-    dataset_name = input("Dataset [sine]: ").lower().strip() or "sine"
-    default_device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_type = input(f"Choix du device [{default_device}]: ").lower().strip() or default_device
-    use_profiler = get_bool_input("Activer le profileur ?", False)
-    save_trace = get_bool_input("Sauvegarder la trace ?", False) if use_profiler else False
-else:
-    num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units or 16, args.layers, args.epochs or 50, args.target_loss, args.batch_size or 128, args.dataset
-    device_type = args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
-    use_profiler, save_trace = args.profile, args.trace
+    device = torch.device(device_type)
+    print(f"{C_BOLD}Device:{C_END} {C_GREEN}{device}{C_END} | {C_BOLD}Units:{C_END} {num_units} | {C_BOLD}Dataset:{C_END} {C_YELLOW}{dataset_name}{C_END}")
 
-device = torch.device(device_type)
-print(f"{C_BOLD}Device:{C_END} {C_GREEN}{device}{C_END} | {C_BOLD}Units:{C_END} {num_units} | {C_BOLD}Layers:{C_END} {num_layers} | {C_BOLD}Dataset:{C_END} {C_YELLOW}{dataset_name}{C_END}")
+    if dataset_name == "har": (x_train, y_train), (x_test, y_test), input_size, output_size = load_har_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
+    elif dataset_name == "occupancy": (x_train, y_train), (x_test, y_test), input_size, output_size = load_occupancy_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
+    elif dataset_name == "gesture": (x_train, y_train), (x_test, y_test), input_size, output_size = load_gesture_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
+    elif dataset_name == "traffic": (x_train, y_train), (x_test, y_test), input_size, output_size = load_traffic_data(); criterion, is_classification = nn.MSELoss(), False
+    elif dataset_name == "physionet": (x_train, y_train), (x_test, y_test), input_size, output_size = load_physionet_data(); criterion, is_classification = nn.MSELoss(), False
+    else: (x_train, y_train), (x_test, y_test), input_size, output_size = generate_sine_data(); criterion, is_classification = nn.MSELoss(), False
 
-if dataset_name == "har": (x_train, y_train), (x_test, y_test), input_size, output_size = load_har_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
-elif dataset_name == "occupancy": (x_train, y_train), (x_test, y_test), input_size, output_size = load_occupancy_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
-elif dataset_name == "gesture": (x_train, y_train), (x_test, y_test), input_size, output_size = load_gesture_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
-elif dataset_name == "traffic": (x_train, y_train), (x_test, y_test), input_size, output_size = load_traffic_data(); criterion, is_classification = nn.MSELoss(), False
-elif dataset_name == "physionet": (x_train, y_train), (x_test, y_test), input_size, output_size = load_physionet_data(); criterion, is_classification = nn.MSELoss(), False
-else: (x_train, y_train), (x_test, y_test), input_size, output_size = generate_sine_data(); criterion, is_classification = nn.MSELoss(), False
+    # SAUVEGARDE DU TEST SET PROPRE
+    eval_data_save = {"x_test": x_test, "y_test": y_test, "input_size": input_size, "output_size": output_size, "is_classification": is_classification}
 
-model = ModernLTCModel(input_size, num_units, output_size, num_layers).to(device)
-try: macs, params = get_model_complexity_info(model, (x_train.shape[1], input_size), as_strings=False, print_per_layer_stat=False, verbose=False); flops_per_sample = macs * 2
-except: flops_per_sample = 0
+    # Appliquer la robustesse (Option B)
+    x_train = apply_sparsity(x_train, sparsity_train, sparsity_mode)
+    x_test_sparsified = apply_sparsity(x_test, sparsity_test, sparsity_mode)
 
-optimizer = optim.Adam(model.parameters(), lr=0.01)
-scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, threshold=0.001)
+    model = ModernLTCModel(input_size, num_units, output_size, num_layers).to(device)
+    try: macs, params = get_model_complexity_info(model, (x_train.shape[1], input_size), as_strings=False, print_per_layer_stat=False, verbose=False); flops_per_sample = macs * 2
+    except: flops_per_sample = 0
 
-start_time_seconds = time.time()
-flops_stats = {
-    "config": {"units": num_units, "layers": num_layers, "epochs": num_epochs, "batch_size": batch_size, "device": str(device)},
-    "execution": {"start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "end_time": None, "total_duration_seconds": 0},
-    "epochs": [], "evaluation": {}
-}
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, threshold=0.001)
 
-prof = None
-if use_profiler:
-    import shutil
-    if os.path.exists('./log/ltc_profile'): shutil.rmtree('./log/ltc_profile')
-    handler = torch.profiler.tensorboard_trace_handler('./log/ltc_profile') if save_trace else None
-    prof = torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1), on_trace_ready=handler, record_shapes=True, with_flops=True, profile_memory=True)
-    prof.start()
+    start_time_seconds = time.time()
+    flops_stats = {
+        "config": {"units": num_units, "layers": num_layers, "epochs": num_epochs, "batch_size": batch_size, "device": str(device), 
+                   "sparsity": {"train": sparsity_train, "test": sparsity_test, "mode": sparsity_mode}, "model_type": "ltc"},
+        "execution": {"start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "end_time": None, "total_duration_seconds": 0},
+        "epochs": [], "evaluation": {}
+    }
 
-best_loss, patience_stop, patience_counter = float('inf'), 15, 0
+    best_loss, patience_stop, patience_counter = float('inf'), 15, 0
+    dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(TensorDataset(x_test_sparsified, y_test), batch_size=batch_size)
 
-dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)
-test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size)
+    for epoch in range(num_epochs):
+        model.train(); epoch_loss = 0
+        for bx, by in dataloader:
+            bx, by = bx.to(device), by.to(device)
+            optimizer.zero_grad(); out, _ = model(bx); loss = criterion(out.view(-1, output_size), by.view(-1)) if is_classification else criterion(out, by)
+            loss.backward(); optimizer.step(); epoch_loss += loss.item()
+        
+        avg_train_loss = epoch_loss / len(dataloader)
+        avg_test_loss, _, _, _, _ = evaluate(model, test_loader, criterion, device, is_classification, output_size)
+        
+        old_lr = optimizer.param_groups[0]['lr']
+        scheduler.step(avg_train_loss)
+        new_lr = optimizer.param_groups[0]['lr']
+        if (epoch + 1) % 5 == 0 or epoch == 0: 
+            print(f"  Epoch [{epoch+1}/{num_epochs}], Loss Train: {C_BOLD}{avg_train_loss:.4f}{C_END}, Test: {C_YELLOW}{avg_test_loss:.4f}{C_END}, LR: {new_lr:.2e}")
+        
+        if avg_train_loss < best_loss * 0.999: best_loss = avg_train_loss; patience_counter = 0
+        else: patience_counter += 1
+        
+        flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_train_loss, "test_loss": avg_test_loss, "flops": flops_per_sample, "lr": new_lr})
+        if target_loss > 0 and avg_train_loss <= target_loss: break
+        if patience_counter >= patience_stop: break
 
-for epoch in range(num_epochs):
-    model.train(); epoch_loss = 0
-    for bx, by in dataloader:
-        bx, by = bx.to(device), by.to(device)
-        optimizer.zero_grad(); out, _ = model(bx); loss = criterion(out.view(-1, output_size), by.view(-1)) if is_classification else criterion(out, by)
-        loss.backward(); optimizer.step(); epoch_loss += loss.item()
-        if use_profiler: prof.step()
-    
-    avg_train_loss = epoch_loss / len(dataloader)
-    avg_test_loss, _, _, _, _ = evaluate(model, test_loader, criterion, device, is_classification, output_size)
-    
-    old_lr = optimizer.param_groups[0]['lr']
-    scheduler.step(avg_train_loss)
-    new_lr = optimizer.param_groups[0]['lr']
-    if new_lr < old_lr: print(f"  {C_YELLOW}[Scheduler] Stagnation. LR: {old_lr} -> {new_lr}{C_END}")
+    total_time = time.time() - start_time_seconds
+    flops_stats["execution"]["total_duration_seconds"] = total_time
+    flops_stats["execution"]["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    if (epoch + 1) % 5 == 0 or epoch == 0: 
-        print(f"  Epoch [{epoch+1}/{num_epochs}], Loss Train: {C_BOLD}{avg_train_loss:.4f}{C_END}, Test: {C_YELLOW}{avg_test_loss:.4f}{C_END}, LR: {new_lr:.2e}")
-    
-    if avg_train_loss < best_loss * 0.999: best_loss = avg_train_loss; patience_counter = 0
-    else: patience_counter += 1
-    
-    flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_train_loss, "test_loss": avg_test_loss, "flops": flops_per_sample, "lr": new_lr})
-    
-    if target_loss > 0 and avg_train_loss <= target_loss: break
-    if patience_counter >= patience_stop:
-        print(f"  {C_RED}[Early Stopping] Fin à l'époque {epoch+1}{C_END}")
-        break
+    avg_test_loss, correct, total, all_preds, all_targets = evaluate(model, test_loader, criterion, device, is_classification, output_size)
+    accuracy = (100 * correct / total) if is_classification else None
+    f1 = f1_score(all_targets, all_preds, average='macro') if (SKLEARN_AVAILABLE and is_classification) else None
+    mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
+    flops_stats["evaluation"] = {"test_loss": avg_test_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
 
-if use_profiler: prof.stop()
-total_time = time.time() - start_time_seconds
-flops_stats["execution"]["total_duration_seconds"] = total_time
-flops_stats["execution"]["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"\n{C_BOLD}--- Évaluation Finale ---{C_END}")
+    if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
+    else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_test_loss:.6f}{C_END}")
 
-# Évaluation finale
-avg_test_loss, correct, total, all_preds, all_targets = evaluate(model, test_loader, criterion, device, is_classification, output_size)
-accuracy = (100 * correct / total) if is_classification else None
-f1 = f1_score(all_targets, all_preds, average='macro') if (SKLEARN_AVAILABLE and is_classification) else None
-mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
+    # NOM DU FICHIER AVEC SPARSITY
+    base_filename = f"ltc_{dataset_name}_spT{int(sparsity_train*100)}_spTe{int(sparsity_test*100)}_{sparsity_mode}_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}"
+    output_dir = os.path.join("results", "ltc", dataset_name); os.makedirs(output_dir, exist_ok=True)
 
-flops_stats["evaluation"] = {"test_loss": avg_test_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
+    # Sauvegarde des Poids et Données
+    torch.save(model.state_dict(), os.path.join(output_dir, f"weights_{base_filename}.pt"))
+    torch.save(eval_data_save, os.path.join(output_dir, f"eval_data_{base_filename}.pt"))
 
-print(f"\n{C_BOLD}--- Évaluation Finale ---{C_END}")
-if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
-else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_test_loss:.6f}{C_END}")
+    model.eval()
+    with torch.no_grad():
+        prediction, _ = model(x_test_sparsified[0:1].to(device))
+    plt.figure(figsize=(12, 8))
+    if is_classification:
+        p, t = torch.argmax(prediction, dim=-1).cpu().numpy()[0], y_test[0].numpy()
+        plt.step(range(len(t)), t, label="True"); plt.step(range(len(p)), p, label="LTC Pred", linestyle="--")
+    else:
+        plt.plot(y_test[0].numpy(), label="True"); plt.plot(prediction[0].detach().cpu().numpy(), label="LTC Pred", linestyle="--")
+    plt.title(f"LTC: {dataset_name} | Sparsity Test: {sparsity_test*100:.0f}%"); plt.legend(); plt.grid(True, alpha=0.3)
+    plt.savefig(os.path.join(output_dir, f"{base_filename}.png"))
 
-# Plot final prediction avec detach()
-model.eval()
-with torch.no_grad():
-    prediction, _ = model(x_test[0:1].to(device))
-    
-plt.figure(figsize=(12, 8))
-if is_classification:
-    p, t = torch.argmax(prediction, dim=-1).cpu().numpy()[0], y_test[0].numpy()
-    plt.step(range(len(t)), t, label="True"); plt.step(range(len(p)), p, label="LTC Pred", linestyle="--")
-else:
-    plt.plot(y_test[0].numpy(), label="True"); plt.plot(prediction[0].cpu().numpy(), label="LTC Pred", linestyle="--")
-plt.title(f"LTC: {dataset_name} | MSE: {avg_test_loss:.4f} | Time: {total_time:.1f}s"); plt.legend(); plt.grid(True, alpha=0.3)
-
-output_dir = os.path.join("results", "ltc", dataset_name); os.makedirs(output_dir, exist_ok=True)
-base_filename = f"ltc_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}"
-plt.savefig(os.path.join(output_dir, f"{base_filename}.png"))
-with open(os.path.join(output_dir, f"{base_filename}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
-print(f"\n{C_GREEN}{C_BOLD}Success! Results saved in '{output_dir}'{C_END}")
+    with open(os.path.join(output_dir, f"{base_filename}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
+    print(f"\n{C_GREEN}{C_BOLD}Success! Results, weights and eval_data saved in '{output_dir}'{C_END}")

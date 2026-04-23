@@ -8,6 +8,8 @@ __pycache__/
 .ipynb_checkpoints/
 *.png
 *.json
+*.pt
+*.pth
 !compare_results.py
 !run_full_benchmark.py
 !ltc_modern_demo.py
