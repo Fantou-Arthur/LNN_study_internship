@@ -111,7 +111,7 @@ def main():
     args = parser.parse_args()
 
     device = torch.device(args.device)
-    sparsity_levels = np.linspace(0, 0.95, 20)
+    sparsity_levels = np.arange(0.0, 0.96, 0.01) # 0%, 1%, ..., 95%
     
     output_dir = os.path.join("results", "comparison")
     os.makedirs(output_dir, exist_ok=True)

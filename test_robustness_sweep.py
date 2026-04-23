@@ -123,7 +123,7 @@ def main():
     criterion = nn.CrossEntropyLoss() if is_classification else nn.MSELoss()
     
     # 3. Sweep
-    sparsity_levels = np.linspace(0, 0.95, 20) # 0% à 95%
+    sparsity_levels = np.arange(0.0, 0.96, 0.01)
     results = []
 
     print(f"\n{C_BOLD}Lancement du sweep (Mode: {args.mode})...{C_END}")
@@ -133,7 +133,8 @@ def main():
         loader = DataLoader(TensorDataset(x_sp, y_test), batch_size=args.batch_size)
         score = evaluate(model, loader, criterion, device, is_classification, output_size)
         results.append(score)
-        print(f"  Sparsity {sp*100:4.1f}% -> {'Précision' if is_classification else 'MSE'}: {C_GREEN}{score:.4f}{C_END}")
+        if int(sp * 100) % 5 == 0:
+            print(f"  Sparsity {sp*100:4.1f}% -> {'Précision' if is_classification else 'MSE'}: {C_GREEN}{score:.4f}{C_END}")
 
     # 4. Plot
     plt.figure(figsize=(10, 6))
