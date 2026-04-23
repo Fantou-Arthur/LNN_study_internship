@@ -1,104 +1,125 @@
 import subprocess
-import sys
-import torch
 import os
+import sys
+import time
 
 # --- COULEURS ANSI ---
 C_BLUE = "\033[94m"
 C_GREEN = "\033[92m"
 C_YELLOW = "\033[93m"
 C_RED = "\033[91m"
-C_CYAN = "\033[96m"
 C_BOLD = "\033[1m"
 C_END = "\033[0m"
 
-MODELS_AVAILABLE = {
-    "CNN": "CNN.py",
-    "RNN": "RNN.py",
-    "LSTM": "LSTM.py",
-    "GRU": "GRU.py",
-    "CfC": "CfC.py",
-    "LTC": "ltc_modern_demo.py"
-}
-
-DATASETS_AVAILABLE = ["sine", "har", "occupancy", "gesture", "traffic", "physionet"]
-
-def get_input(prompt, default):
-    user_input = input(f"{C_CYAN}{prompt}{C_END} [{default}]: ")
-    if not user_input.strip(): return default
-    try: return int(user_input)
-    except ValueError: return user_input
-
-def run_command(cmd):
-    print(f"\n{C_YELLOW}[EXEC]{C_END} {C_BOLD}{' '.join(cmd)}{C_END}")
-    try:
-        subprocess.run([sys.executable] + cmd, check=True)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"{C_RED}[ERREUR] Échec de l'exécution : {e}{C_END}")
-        return False
-
-def main():
+def clear_screen():
     os.system('cls' if os.name == 'nt' else 'clear')
-    print(f"{C_BLUE}{C_BOLD}" + "="*50)
-    print("   🚀 ORCHESTRATEUR DE BENCHMARK GLOBAL 🚀")
-    print("="*50 + f"{C_END}")
-    
-    epochs = get_input("Nombre d'époques (epochs)", 50)
-    units = get_input("Nombre d'unités (units)", 32)
-    layers = get_input("Nombre de couches (layers)", 1)
-    batch_size = get_input("Taille du batch", 128)
-    
-    default_device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = input(f"{C_CYAN}Device (cuda/cpu){C_END} [{default_device}]: ").lower().strip() or default_device
-    
-    print(f"\n{C_YELLOW}Modèles disponibles :{C_END}", ", ".join(MODELS_AVAILABLE.keys()))
-    m_choice = input(f"{C_CYAN}Modèles à tester (Entrée pour TOUS) :{C_END} ").strip()
-    if m_choice:
-        models_to_run = {k.strip().upper(): MODELS_AVAILABLE[k.strip().upper()] for k in m_choice.split(",") if k.strip().upper() in MODELS_AVAILABLE}
-    else:
-        models_to_run = MODELS_AVAILABLE
 
-    print(f"\n{C_YELLOW}Datasets disponibles :{C_END}", ", ".join(DATASETS_AVAILABLE))
-    d_choice = input(f"{C_CYAN}Datasets à tester (Entrée pour TOUS) :{C_END} ").strip()
-    if d_choice:
-        datasets_to_run = [d.strip().lower() for d in d_choice.split(",") if d.strip().lower() in DATASETS_AVAILABLE]
-    else:
-        datasets_to_run = DATASETS_AVAILABLE
+def print_header():
+    print(f"\n{C_BLUE}{C_BOLD}" + "="*50)
+    print("      🚀 NEURAL NETWORK BENCHMARK SUITE 🚀")
+    print("="*50 + f"{C_END}\n")
 
-    if not models_to_run or not datasets_to_run:
-        print(f"{C_RED}Erreur : Aucun modèle ou dataset sélectionné.{C_END}")
-        return
-
-    print(f"\n{C_BOLD}{C_BLUE}--- RÉSUMÉ DU BENCHMARK ---{C_END}")
-    print(f"{C_CYAN}Modèles  :{C_END} {', '.join(models_to_run.keys())}")
-    print(f"{C_CYAN}Datasets :{C_END} {', '.join(datasets_to_run)}")
-    print(f"{C_CYAN}Config   :{C_END} {epochs} ep, {units} units, {layers} layers, {batch_size} batch, {device}")
-    print(f"{C_BLUE}" + "-"*30 + f"{C_END}")
+def run_benchmark():
+    datasets = ["sine", "har", "occupancy", "gesture", "traffic", "physionet"]
+    models = ["LTC", "CfC", "CNN", "RNN", "LSTM", "GRU"]
     
-    confirm = input(f"{C_BOLD}{C_YELLOW}Lancer le benchmark ? (y/n) [y]: {C_END}").lower().strip()
-    if confirm == 'n':
-        print(f"{C_RED}Annulé.{C_END}")
-        return
-
-    count, total = 0, len(models_to_run) * len(datasets_to_run)
-    for ds in datasets_to_run:
-        print(f"\n{C_BOLD}{C_GREEN}>>> DATASET : {ds.upper()}{C_END}")
-        for name, script in models_to_run.items():
-            count += 1
-            print(f"\n{C_YELLOW}[{count}/{total}]{C_END} {C_BOLD}{name}{C_END} sur {C_GREEN}{ds}{C_END}...")
-            cmd = [script, "--dataset", ds, "--epochs", str(epochs), "--units", str(units), "--layers", str(layers), "--batch_size", str(batch_size), "--device", device]
-            run_command(cmd)
-
-    print(f"\n{C_BOLD}{C_BLUE}" + "="*50)
-    print("✨ TOUS LES ENTRAÎNEMENTS SONT TERMINÉS ✨")
-    print("="*50 + f"{C_END}")
+    print_header()
     
-    compare = input(f"\n{C_YELLOW}Générer les graphiques de comparaison ? (y/n) [y]: {C_END}").lower().strip()
-    if compare != 'n':
-        run_command(["compare_results.py"])
+    # 1. Configuration
+    print(f"{C_YELLOW}--- CONFIGURATION GLOBALE ---{C_END}")
+    epochs = input(f"Nombre d'époques [{C_BOLD}50{C_END}]: ") or "50"
+    units = input(f"Nombre d'unités/neurones [{C_BOLD}32{C_END}]: ") or "32"
+    layers = input(f"Nombre de couches [{C_BOLD}1{C_END}]: ") or "1"
+    batch_size = input(f"Taille du batch [{C_BOLD}128{C_END}]: ") or "128"
     
-    print(f"\n{C_GREEN}{C_BOLD}[FIN] Terminé.{C_END}")
+    device = "cuda" if "cuda" in sys.argv else ("cpu" if "cpu" in sys.argv else "cuda")
+    print(f"\n{C_BLUE}Device utilisé : {C_BOLD}{device.upper()}{C_END}")
+
+    # 2. Sélection des datasets
+    print(f"\n{C_YELLOW}--- SÉLECTION DES DATASETS ---{C_END}")
+    for i, ds in enumerate(datasets):
+        print(f"{i+1}. {ds}")
+    ds_choice = input(f"\nChoix (ex: 1,2,5 ou 'all') [{C_BOLD}all{C_END}]: ") or "all"
+    
+    selected_datasets = datasets if ds_choice.lower() == "all" else [datasets[int(i)-1] for i in ds_choice.split(",")]
+
+    # 3. Sélection des modèles
+    print(f"\n{C_YELLOW}--- SÉLECTION DES MODÈLES ---{C_END}")
+    for i, m in enumerate(models):
+        print(f"{i+1}. {m}")
+    m_choice = input(f"\nChoix (ex: 1,3 ou 'all') [{C_BOLD}all{C_END}]: ") or "all"
+    
+    selected_models = models if m_choice.lower() == "all" else [models[int(i)-1] for i in m_choice.split(",")]
+
+    total_runs = len(selected_datasets) * len(selected_models)
+    current_run = 0
+
+    print(f"\n{C_BOLD}{C_GREEN}Lancement de {total_runs} tests...{C_END}\n")
+
+    for ds in selected_datasets:
+        for model in selected_models:
+            current_run += 1
+            script_name = "ltc_modern_demo.py" if model == "LTC" else f"{model}.py"
+            
+            print(f"{C_BLUE}[{current_run}/{total_runs}]{C_END} Entraînement {C_BOLD}{model}{C_END} sur {C_BOLD}{ds}{C_END}...")
+            
+            cmd = [
+                "python", "-u", script_name,
+                "--dataset", ds,
+                "--epochs", epochs,
+                "--units", units,
+                "--layers", layers,
+                "--batch_size", batch_size,
+                "--device", device
+            ]
+            
+            try:
+                all_output = []
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+                
+                final_metrics = {"loss": None, "acc": None}
+
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        all_output.append(line)
+                        # Extraction des métriques finales pour le résumé
+                        if "Test MSE:" in line: final_metrics["loss"] = line.split(":")[-1].strip()
+                        if "Test Accuracy:" in line: final_metrics["acc"] = line.split(":")[-1].strip()
+                        
+                        # Affichage filtré
+                        if any(key in line for key in ["Epoch", "Scheduler", "Success", "Test"]):
+                            print(f"  {line.strip()}")
+                            sys.stdout.flush()
+                
+                if process.returncode == 0:
+                    # Résumé descriptif au lieu de "OK"
+                    res_msg = f"✨ {C_BOLD}{model}{C_END} terminé sur {C_BOLD}{ds}{C_END} | "
+                    if final_metrics["acc"]: res_msg += f"Précision: {C_GREEN}{final_metrics['acc']}{C_END}"
+                    elif final_metrics["loss"]: res_msg += f"Perte: {C_GREEN}{final_metrics['loss']}{C_END}"
+                    print(f"  {res_msg}\n")
+                else:
+                    print(f"{C_RED}  ❌ ÉCHEC : {model} sur {ds} (Code {process.returncode}){C_END}")
+                    print(f"{C_RED}  Dernières lignes :{C_END}")
+                    for line in all_output[-10:]: print(f"    {line.strip()}")
+                    print("")
+            except Exception as e:
+                print(f"{C_RED}  [ERREUR] Impossible de lancer le script: {e}{C_END}\n")
+
+    print(f"{C_BOLD}{C_GREEN}" + "="*50)
+    print("         TOUS LES ENTRAÎNEMENTS SONT TERMINÉS")
+    print("="*50 + f"{C_END}\n")
+
+    gen_plots = input(f"Générer les graphiques de comparaison maintenant ? (y/n) [{C_BOLD}y{C_END}]: ") or "y"
+    if gen_plots.lower() == "y":
+        print(f"\n{C_BLUE}[EXEC]{C_END} compare_results.py")
+        subprocess.run(["python", "compare_results.py"])
 
 if __name__ == "__main__":
-    main()
+    try:
+        run_benchmark()
+    except KeyboardInterrupt:
+        print(f"\n\n{C_RED}Benchmark interrompu par l'utilisateur.{C_END}")
+        sys.exit(0)

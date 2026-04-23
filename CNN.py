@@ -149,6 +149,23 @@ class ModernCNNModel(nn.Module):
         x = x.transpose(1, 2)
         return self.fc(x)
 
+def evaluate(model, loader, criterion, device, is_classification, output_size):
+    model.eval()
+    total_loss, correct, total = 0, 0, 0
+    all_preds, all_targets = [], []
+    with torch.no_grad():
+        for bx, by in loader:
+            bx, by = bx.to(device), by.to(device); out = model(bx)
+            if is_classification:
+                loss = criterion(out.view(-1, output_size), by.view(-1))
+                preds = torch.argmax(out, dim=-1); correct += (preds == by).sum().item(); total += by.numel()
+                all_preds.extend(preds.view(-1).cpu().numpy()); all_targets.extend(by.view(-1).cpu().numpy())
+            else:
+                loss = criterion(out, by)
+                all_preds.extend(out.view(-1).cpu().numpy()); all_targets.extend(by.view(-1).cpu().numpy())
+            total_loss += loss.item()
+    return total_loss / len(loader), correct, total, all_preds, all_targets
+
 def get_input(prompt, default):
     user_input = input(f"{prompt} [{default}]: ")
     return int(user_input) if user_input.strip() else default
@@ -225,6 +242,8 @@ if use_profiler:
 best_loss, patience_stop, patience_counter = float('inf'), 15, 0
 
 dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size)
+
 for epoch in range(num_epochs):
     model.train(); epoch_loss = 0
     for bx, by in dataloader:
@@ -232,58 +251,56 @@ for epoch in range(num_epochs):
         optimizer.zero_grad(); out = model(bx); loss = criterion(out.view(-1, output_size), by.view(-1)) if is_classification else criterion(out, by)
         loss.backward(); optimizer.step(); epoch_loss += loss.item()
         if use_profiler: prof.step()
-    avg_loss = epoch_loss / len(dataloader)
+    
+    avg_train_loss = epoch_loss / len(dataloader)
+    avg_test_loss, _, _, _, _ = evaluate(model, test_loader, criterion, device, is_classification, output_size)
     
     old_lr = optimizer.param_groups[0]['lr']
-    scheduler.step(avg_loss)
+    scheduler.step(avg_train_loss)
     new_lr = optimizer.param_groups[0]['lr']
     if new_lr < old_lr: print(f"  {C_YELLOW}[Scheduler] Stagnation. LR: {old_lr} -> {new_lr}{C_END}")
 
-    if (epoch + 1) % 5 == 0 or epoch == 0: print(f"  Epoch [{epoch+1}/{num_epochs}], Loss: {C_BOLD}{avg_loss:.4f}{C_END}, LR: {new_lr:.2e}")
-    if avg_loss < best_loss * 0.999: best_loss = avg_loss; patience_counter = 0
+    if (epoch + 1) % 5 == 0 or epoch == 0: 
+        print(f"  Epoch [{epoch+1}/{num_epochs}], Loss Train: {C_BOLD}{avg_train_loss:.4f}{C_END}, Test: {C_YELLOW}{avg_test_loss:.4f}{C_END}, LR: {new_lr:.2e}")
+    
+    if avg_train_loss < best_loss * 0.999: best_loss = avg_train_loss; patience_counter = 0
     else: patience_counter += 1
     
-    flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_loss, "flops": flops_per_sample, "lr": new_lr})
-    if (target_loss > 0 and avg_loss <= target_loss) or patience_counter >= patience_stop: break
+    flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_train_loss, "test_loss": avg_test_loss, "flops": flops_per_sample, "lr": new_lr})
+    
+    if (target_loss > 0 and avg_train_loss <= target_loss) or patience_counter >= patience_stop: break
 
 if use_profiler: prof.stop()
 total_time = time.time() - start_time_seconds
 flops_stats["execution"]["total_duration_seconds"] = total_time
 flops_stats["execution"]["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+# Évaluation finale
+avg_test_loss, correct, total, all_preds, all_targets = evaluate(model, test_loader, criterion, device, is_classification, output_size)
+accuracy = (100 * correct / total) if is_classification else None
+f1 = f1_score(all_targets, all_preds, average='macro') if (SKLEARN_AVAILABLE and is_classification) else None
+mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
+
+flops_stats["evaluation"] = {"test_loss": avg_test_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
+
+print(f"\n{C_BOLD}--- Évaluation Finale ---{C_END}")
+if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
+else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_test_loss:.6f}{C_END}")
+
+# Plot final prediction avec torch.no_grad()
 model.eval()
 with torch.no_grad():
-    print(f"\n{C_BOLD}--- Évaluation ---{C_END}")
-    correct, total, total_loss = 0, 0, 0
-    all_preds, all_targets = [], []
-    test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size)
-    for bx, by in test_loader:
-        bx, by = bx.to(device), by.to(device); out = model(bx)
-        if is_classification:
-            loss = criterion(out.view(-1, output_size), by.view(-1)); preds = torch.argmax(out, dim=-1); correct += (preds == by).sum().item(); total += by.numel()
-            all_preds.extend(preds.view(-1).cpu().numpy()); all_targets.extend(by.view(-1).cpu().numpy())
-        else:
-            loss = criterion(out, by); all_preds.extend(out.view(-1).cpu().numpy()); all_targets.extend(by.view(-1).cpu().numpy())
-        total_loss += loss.item()
-    avg_loss = total_loss / len(test_loader)
-    accuracy = (100 * correct / total) if is_classification else None
-    f1 = f1_score(all_targets, all_preds, average='macro') if (SKLEARN_AVAILABLE and is_classification) else None
-    mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
-    
-    flops_stats["evaluation"] = {"test_loss": avg_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
-    
-    if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
-    else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_loss:.6f}{C_END}")
+    prediction = model(x_test[0:1].to(device))
 
-    prediction = model(x_test[0:1].to(device)); plt.figure(figsize=(12, 8))
-    if is_classification:
-        p, t = torch.argmax(prediction, dim=-1).cpu().numpy()[0], y_test[0].numpy()
-        plt.step(range(len(t)), t, label="True"); plt.step(range(len(p)), p, label="CNN Pred", linestyle="--")
-    else:
-        plt.plot(y_test[0].numpy(), label="True"); plt.plot(prediction[0].cpu().numpy(), label="CNN Pred", linestyle="--")
-    plt.title(f"CNN: {dataset_name} | MSE: {avg_loss:.4f}"); plt.legend(); plt.grid(True, alpha=0.3)
-    
-    output_dir = os.path.join("results", "cnn", dataset_name); os.makedirs(output_dir, exist_ok=True)
-    plt.savefig(os.path.join(output_dir, f"cnn_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.png"))
-    with open(os.path.join(output_dir, f"cnn_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
-    print(f"\n{C_GREEN}{C_BOLD}Success! Results saved in '{output_dir}'{C_END}")
+plt.figure(figsize=(12, 8))
+if is_classification:
+    p, t = torch.argmax(prediction, dim=-1).cpu().numpy()[0], y_test[0].numpy()
+    plt.step(range(len(t)), t, label="True"); plt.step(range(len(p)), p, label="CNN Pred", linestyle="--")
+else:
+    plt.plot(y_test[0].numpy(), label="True"); plt.plot(prediction[0].cpu().numpy(), label="CNN Pred", linestyle="--")
+plt.title(f"CNN: {dataset_name} | MSE: {avg_test_loss:.4f}"); plt.legend(); plt.grid(True, alpha=0.3)
+
+output_dir = os.path.join("results", "cnn", dataset_name); os.makedirs(output_dir, exist_ok=True)
+plt.savefig(os.path.join(output_dir, f"cnn_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.png"))
+with open(os.path.join(output_dir, f"cnn_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
+print(f"\n{C_GREEN}{C_BOLD}Success! Results saved in '{output_dir}'{C_END}")
