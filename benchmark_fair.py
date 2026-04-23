@@ -29,8 +29,8 @@ def run_command(cmd):
     
     # Regex pour extraire Loss Train et Test (MSE ou Accuracy)
     # Format: Loss Train: [BOLD]0.1234[END], Test: [YELLOW]0.5678[END]
-    loss_pattern = re.compile(r"Loss Train:.*?(0\.\d+)")
-    test_pattern = re.compile(r"Test:.*?(0\.\d+|[1-9]\d*\.\d+)")
+    loss_pattern = re.compile(r"Loss Train:.*?(\d+\.\d+)")
+    test_pattern = re.compile(r"Test:.*?(\d+\.\d+)")
 
     for line in process.stdout:
         print(line, end="")
