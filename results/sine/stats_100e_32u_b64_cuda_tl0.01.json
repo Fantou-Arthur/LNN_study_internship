@@ -1,0 +1,57 @@
+{
+    "config": {
+        "units": 32,
+        "epochs": 100,
+        "batch_size": 64,
+        "device": "cuda",
+        "flops_method": "theoretical_fallback",
+        "profiler_enabled": false
+    },
+    "execution": {
+        "start_time": "2026-04-22 16:06:52",
+        "end_time": "2026-04-22 16:07:29",
+        "total_duration_seconds": 37.61533975601196
+    },
+    "epochs": [
+        {
+            "epoch": 1,
+            "loss": 0.4753468558192253,
+            "flops": 23950080000
+        },
+        {
+            "epoch": 2,
+            "loss": 0.33509849570691586,
+            "flops": 23950080000
+        },
+        {
+            "epoch": 3,
+            "loss": 0.18728234618902206,
+            "flops": 23950080000
+        },
+        {
+            "epoch": 4,
+            "loss": 0.04379038221668452,
+            "flops": 23950080000
+        },
+        {
+            "epoch": 5,
+            "loss": 0.015072570939082652,
+            "flops": 23950080000
+        },
+        {
+            "epoch": 6,
+            "loss": 0.009314920578617603,
+            "flops": 23950080000
+        }
+    ],
+    "total_training_flops": 143700480000,
+    "evaluation_flops": 0,
+    "hardware_metrics": null,
+    "evaluation": {
+        "test_loss": 0.007890856708399951,
+        "test_accuracy_pct": null,
+        "f1_score_macro": null,
+        "mae": 0.04040540418728871,
+        "rmse": 0.08883049424831516
+    }
+}
