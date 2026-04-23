@@ -82,8 +82,8 @@ def find_latest_files(model_name, dataset_name):
     if not os.path.exists(base_path):
         return None, None
     
-    weight_files = glob.glob(os.path.join(base_path, "weights_*.pt"))
-    data_files = glob.glob(os.path.join(base_path, "eval_data_*.pt"))
+    weight_files = glob.glob(os.path.join(base_path, "**", "weights_*.pt"), recursive=True)
+    data_files = glob.glob(os.path.join(base_path, "**", "eval_data_*.pt"), recursive=True)
     
     if not weight_files or not data_files:
         return None, None
@@ -91,15 +91,15 @@ def find_latest_files(model_name, dataset_name):
     # Trouver le plus récent (basé sur le temps de modif)
     latest_weights = max(weight_files, key=os.path.getmtime)
     
-    # Essayer de trouver le eval_data qui correspond au même timestamp/config
-    # On cherche celui qui a la même fin de nom après 'weights_'
+    # Le eval_data correspondant est dans le même dossier
+    dir_of_weights = os.path.dirname(latest_weights)
     config_str = os.path.basename(latest_weights).replace("weights_", "")
-    matching_data = os.path.join(base_path, "eval_data_" + config_str)
+    matching_data = os.path.join(dir_of_weights, "eval_data_" + config_str)
     
     if os.path.exists(matching_data):
         return latest_weights, matching_data
     else:
-        # Fallback sur le plus récent
+        # Fallback sur le plus récent du même dossier ou globalement
         return latest_weights, max(data_files, key=os.path.getmtime)
 
 def main():

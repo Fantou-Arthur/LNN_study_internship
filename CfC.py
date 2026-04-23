@@ -295,7 +295,9 @@ if __name__ == "__main__":
 
     # NOM DU FICHIER AVEC SPARSITY
     base_filename = f"cfc_{dataset_name}_spT{int(sparsity_train*100)}_spTe{int(sparsity_test*100)}_{sparsity_mode}_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}"
-    output_dir = os.path.join("results", "cfc", dataset_name); os.makedirs(output_dir, exist_ok=True)
+    subfolder = f"{int(sparsity_train*100)}_{sparsity_mode}"
+    output_dir = os.path.join("results", "cfc", dataset_name, subfolder)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Sauvegarde des Poids et Données
     torch.save(model.state_dict(), os.path.join(output_dir, f"weights_{base_filename}.pt"))
