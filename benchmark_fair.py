@@ -147,7 +147,10 @@ def main():
             print(f"\n{C_BOLD}Dataset: {current_ds.upper()}{C_END} (Cible Avg Loss: {res['target']:.4f})")
         
         color = C_GREEN if "SUCCESS" in res['status'] else C_RED
-        print(f"  - {res['model']}: Loss {res['final_train_loss']:.4f} | Test: {res['test_metric']} | {color}{res['status']}{C_END}")
+        train_loss_str = f"{res['final_train_loss']:.4f}" if res['final_train_loss'] is not None else "N/A"
+        test_metric_str = f"{res['test_metric']:.4f}" if res['test_metric'] is not None else "N/A"
+        
+        print(f"  - {res['model']}: Loss {train_loss_str} | Test: {test_metric_str} | {color}{res['status']}{C_END}")
 
 if __name__ == "__main__":
     main()
