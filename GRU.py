@@ -13,6 +13,14 @@ import argparse
 import sys
 from torch.utils.data import DataLoader, TensorDataset
 
+# --- COULEURS ANSI ---
+C_BLUE = "\033[94m"
+C_GREEN = "\033[92m"
+C_YELLOW = "\033[93m"
+C_RED = "\033[91m"
+C_BOLD = "\033[1m"
+C_END = "\033[0m"
+
 try:
     from sklearn.metrics import f1_score, mean_absolute_error
     SKLEARN_AVAILABLE = True
@@ -93,7 +101,7 @@ def load_physionet_data(seq_len=32, num_files=500):
     files = [f for f in os.listdir(base_path) if f.endswith(".txt")][:num_files]
     params_to_keep, target_param = ['Age', 'Gender', 'GCS', 'Temp'], 'HR'
     all_x, all_y = [], []
-    print(f"[>] Chargement de {len(files)} dossiers PhysioNet...")
+    print(f"{C_YELLOW}[>] Chargement de {len(files)} dossiers PhysioNet...{C_END}")
     for f in files:
         df = pd.read_csv(os.path.join(base_path, f))
         df['minutes'] = df['Time'].apply(lambda x: int(x.split(':')[0])*60 + int(x.split(':')[1]) if isinstance(x, str) else 0)
@@ -140,13 +148,13 @@ def get_bool_input(prompt, default):
     user_input = input(f"{prompt} (y/n) [{'y' if default else 'n'}]: ").lower().strip()
     return user_input == 'y' if user_input else default
 
-parser = argparse.ArgumentParser(description="GRU Modern Demo with Profiler")
-parser.add_argument("--units", type=int, default=32, help="Nombre d'unités cachées")
+parser = argparse.ArgumentParser(description="GRU Modern Demo with Fix")
+parser.add_argument("--units", type=int, help="Nombre de neurones")
 parser.add_argument("--layers", type=int, default=1, help="Nombre de couches")
-parser.add_argument("--epochs", type=int, default=50)
-parser.add_argument("--batch_size", type=int, default=128)
+parser.add_argument("--epochs", type=int, help="Nombre d'époques")
+parser.add_argument("--batch_size", type=int, help="Taille du batch")
 parser.add_argument("--device", type=str)
-parser.add_argument("--dataset", type=str, choices=["sine", "har", "occupancy", "gesture", "traffic", "physionet"], default="sine")
+parser.add_argument("--dataset", type=str, default="sine")
 parser.add_argument("--target_loss", type=float, default=0.0)
 parser.add_argument("--profile", action="store_true")
 parser.add_argument("--trace", action="store_true")
@@ -154,24 +162,24 @@ parser.add_argument("--trace", action="store_true")
 args = parser.parse_args()
 
 if len(sys.argv) == 1:
-    print("\n--- Configuration du modèle GRU (Mode Interactif) ---")
+    print(f"\n{C_BOLD}{C_BLUE}--- Configuration du modèle GRU ---{C_END}")
     num_units = get_input("Nombre d'unités (units)", 32)
     num_layers = get_input("Nombre de couches (layers)", 1)
     num_epochs = get_input("Nombre d'époques (epochs)", 50)
     target_loss = float(input("Perte cible [0.0]: ") or 0.0)
     batch_size = get_input("Taille du batch", 128)
-    dataset_name = input("Dataset (sine/har/occupancy/gesture/traffic/physionet) [sine]: ").lower().strip() or "sine"
+    dataset_name = input("Dataset [sine]: ").lower().strip() or "sine"
     default_device = "cuda" if torch.cuda.is_available() else "cpu"
-    device_type = input(f"Choix du device (cuda/cpu) [{default_device}]: ").lower().strip() or default_device
+    device_type = input(f"Choix du device [{default_device}]: ").lower().strip() or default_device
     use_profiler = get_bool_input("Activer le profileur ?", False)
     save_trace = get_bool_input("Sauvegarder la trace ?", False) if use_profiler else False
 else:
-    num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units, args.layers, args.epochs, args.target_loss, args.batch_size, args.dataset
+    num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units or 32, args.layers, args.epochs or 50, args.target_loss, args.batch_size or 128, args.dataset
     device_type = args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
     use_profiler, save_trace = args.profile, args.trace
 
 device = torch.device(device_type)
-print(f"Device: {device} | Units: {num_units} | Layers: {num_layers} | Type: GRU")
+print(f"{C_BOLD}Device:{C_END} {C_GREEN}{device}{C_END} | {C_BOLD}Units:{C_END} {num_units} | {C_BOLD}Layers:{C_END} {num_layers} | {C_BOLD}Dataset:{C_END} {C_YELLOW}{dataset_name}{C_END}")
 
 if dataset_name == "har": (x_train, y_train), (x_test, y_test), input_size, output_size = load_har_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
 elif dataset_name == "occupancy": (x_train, y_train), (x_test, y_test), input_size, output_size = load_occupancy_data(); criterion, is_classification = nn.CrossEntropyLoss(), True
@@ -181,17 +189,17 @@ elif dataset_name == "physionet": (x_train, y_train), (x_test, y_test), input_si
 else: (x_train, y_train), (x_test, y_test), input_size, output_size = generate_sine_data(); criterion, is_classification = nn.MSELoss(), False
 
 model = ModernGRUModel(input_size, num_units, output_size, num_layers).to(device)
-with torch.cuda.device(device) if device.type == 'cuda' else torch.cpu.amp.autocast():
-    try: macs, params = get_model_complexity_info(model, (x_train.shape[1], input_size), as_strings=False, print_per_layer_stat=False, verbose=False); flops_per_sample = macs * 2; flops_method = "ptflops"
-    except: flops_per_sample, flops_method = 0, "unknown"
+try: macs, params = get_model_complexity_info(model, (x_train.shape[1], input_size), as_strings=False, print_per_layer_stat=False, verbose=False); flops_per_sample = macs * 2
+except: flops_per_sample = 0
 
-print(f"Complexité : {flops_per_sample:.2e} FLOPS/sample")
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.01)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, threshold=0.001)
+
 start_time_seconds = time.time()
 flops_stats = {
     "config": {"units": num_units, "layers": num_layers, "rnn_type": "gru", "epochs": num_epochs, "batch_size": batch_size, "device": str(device)},
     "execution": {"start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "end_time": None, "total_duration_seconds": 0},
-    "epochs": [], "total_training_flops": 0
+    "epochs": [], "evaluation": {}
 }
 
 prof = None
@@ -199,38 +207,42 @@ if use_profiler:
     import shutil
     if os.path.exists('./log/gru_profile'): shutil.rmtree('./log/gru_profile')
     handler = torch.profiler.tensorboard_trace_handler('./log/gru_profile') if save_trace else None
-    prof = torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1),
-        on_trace_ready=handler, record_shapes=True, with_flops=True, profile_memory=True
-    )
+    prof = torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+        schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=1), on_trace_ready=handler, record_shapes=True, with_flops=True, profile_memory=True)
     prof.start()
+
+best_loss, patience_stop, patience_counter = float('inf'), 15, 0
 
 dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=batch_size, shuffle=True)
 for epoch in range(num_epochs):
-    model.train(); epoch_loss = 0; epoch_flops = flops_per_sample * 3 * len(x_train)
+    model.train(); epoch_loss = 0
     for bx, by in dataloader:
         bx, by = bx.to(device), by.to(device)
         optimizer.zero_grad(); out, _ = model(bx); loss = criterion(out.view(-1, output_size), by.view(-1)) if is_classification else criterion(out, by)
         loss.backward(); optimizer.step(); epoch_loss += loss.item()
         if use_profiler: prof.step()
     avg_loss = epoch_loss / len(dataloader)
-    if (epoch + 1) % 5 == 0 or epoch == 0: print(f"  Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
-    if target_loss > 0 and avg_loss <= target_loss: break
-    flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_loss, "flops": epoch_flops})
+    
+    old_lr = optimizer.param_groups[0]['lr']
+    scheduler.step(avg_loss)
+    new_lr = optimizer.param_groups[0]['lr']
+    if new_lr < old_lr: print(f"  {C_YELLOW}[Scheduler] Stagnation. LR: {old_lr} -> {new_lr}{C_END}")
 
-if use_profiler:
-    prof.stop()
-    print("\n--- Résumé du Profilage Matériel ---")
-    print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    if (epoch + 1) % 5 == 0 or epoch == 0: print(f"  Epoch [{epoch+1}/{num_epochs}], Loss: {C_BOLD}{avg_loss:.4f}{C_END}, LR: {new_lr:.2e}")
+    if avg_loss < best_loss * 0.999: best_loss = avg_loss; patience_counter = 0
+    else: patience_counter += 1
+    
+    flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_loss, "flops": flops_per_sample, "lr": new_lr})
+    if (target_loss > 0 and avg_loss <= target_loss) or patience_counter >= patience_stop: break
 
+if use_profiler: prof.stop()
 total_time = time.time() - start_time_seconds
 flops_stats["execution"]["total_duration_seconds"] = total_time
 flops_stats["execution"]["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 model.eval()
 with torch.no_grad():
-    print("\n--- Évaluation ---")
+    print(f"\n{C_BOLD}--- Évaluation ---{C_END}")
     correct, total, total_loss = 0, 0, 0
     all_preds, all_targets = [], []
     test_loader = DataLoader(TensorDataset(x_test, y_test), batch_size=batch_size)
@@ -242,33 +254,25 @@ with torch.no_grad():
         else:
             loss = criterion(out, by); all_preds.extend(out.view(-1).cpu().numpy()); all_targets.extend(by.view(-1).cpu().numpy())
         total_loss += loss.item()
-    avg_loss = total_loss / len(test_loader); accuracy = (100 * correct / total) if is_classification else None
-    f1, mae, rmse = None, None, None
-    if SKLEARN_AVAILABLE:
-        if is_classification: f1 = f1_score(all_targets, all_preds, average='macro')
-        else: mae = mean_absolute_error(all_targets, all_preds); rmse = np.sqrt(avg_loss)
+    avg_loss = total_loss / len(test_loader)
+    accuracy = (100 * correct / total) if is_classification else None
+    f1 = f1_score(all_targets, all_preds, average='macro') if (SKLEARN_AVAILABLE and is_classification) else None
+    mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
     
-    if is_classification: print(f"Test Accuracy: {accuracy:.2f}%" + (f" | F1: {f1:.4f}" if f1 else ""))
-    else: print(f"Test MSE: {avg_loss:.6f}" + (f" | MAE: {mae:.6f}" if mae else ""))
+    flops_stats["evaluation"] = {"test_loss": avg_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
     
+    if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
+    else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_loss:.6f}{C_END}")
+
     prediction, _ = model(x_test[0:1].to(device)); plt.figure(figsize=(12, 8))
     if is_classification:
         p, t = torch.argmax(prediction, dim=-1).cpu().numpy()[0], y_test[0].numpy()
-        plt.step(range(len(t)), t, label="True", where='post'); plt.step(range(len(p)), p, label=f"GRU Pred", linestyle="--", where='post')
+        plt.step(range(len(t)), t, label="True"); plt.step(range(len(p)), p, label="GRU Pred", linestyle="--")
     else:
-        plt.plot(y_test[0].numpy(), label="True", linewidth=2, color='blue'); plt.plot(prediction[0].cpu().numpy(), label=f"GRU Pred", linestyle="--", linewidth=2, color='orange')
+        plt.plot(y_test[0].numpy(), label="True"); plt.plot(prediction[0].cpu().numpy(), label="GRU Pred", linestyle="--")
+    plt.title(f"GRU: {dataset_name} | MSE: {avg_loss:.4f}"); plt.legend(); plt.grid(True, alpha=0.3)
     
-    if is_classification: metric_text = f"Acc: {accuracy:.2f}%" + (f" | F1: {f1:.3f}" if f1 else "")
-    else: metric_text = f"MSE: {avg_loss:.4f}" + (f" | MAE: {mae:.3f}" if mae else "")
-    full_title = (f"GRU: {num_layers}L | {num_units}u | {num_epochs}e | Dataset: {dataset_name}\n"
-                  f"{metric_text} | Total Time: {total_time:.2f}s | Device: {device}")
-    plt.title(full_title); plt.legend(); plt.grid(True, alpha=0.3)
-    
-    flops_stats["evaluation"] = {"test_loss": avg_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae, "rmse": rmse}
-    output_dir = os.path.join("results", "gru", dataset_name)
-    os.makedirs(output_dir, exist_ok=True)
-    tl_suffix = f"_tl{target_loss}" if target_loss > 0 else ""
-    base_filename = f"gru_{num_epochs}e_{num_units}u_{num_layers}L_b{batch_size}_{device.type}_gru{tl_suffix}"
-    plt.savefig(os.path.join(output_dir, f"{base_filename}.png"))
-    with open(os.path.join(output_dir, f"{base_filename}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
-    print(f"\nSuccess! Results saved in '{output_dir}'")
+    output_dir = os.path.join("results", "gru", dataset_name); os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, f"gru_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.png"))
+    with open(os.path.join(output_dir, f"gru_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}.json"), "w") as f: json.dump(flops_stats, f, indent=4)
+    print(f"\n{C_GREEN}{C_BOLD}Success! Results saved in '{output_dir}'{C_END}")

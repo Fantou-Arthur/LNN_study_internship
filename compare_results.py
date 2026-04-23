@@ -1,133 +1,86 @@
 import os
 import json
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
-from datetime import datetime
+import matplotlib.pyplot as plt
 
-def load_all_results(base_path="results"):
-    results_list = []
-    if not os.path.exists(base_path):
-        print(f"Erreur: Le dossier {base_path} n'existe pas.")
-        return None
+# --- COULEURS ANSI ---
+C_BLUE = "\033[94m"
+C_GREEN = "\033[92m"
+C_YELLOW = "\033[93m"
+C_RED = "\033[91m"
+C_BOLD = "\033[1m"
+C_END = "\033[0m"
 
-    # Parcourir results/<model>/<dataset>/<file>.json
-    for model_name in os.listdir(base_path):
-        model_path = os.path.join(base_path, model_name)
-        if not os.path.isdir(model_path): continue
+def load_results(results_dir="results"):
+    data = []
+    for root, dirs, files in os.walk(results_dir):
+        for file in files:
+            if file.endswith(".json"):
+                path = os.path.join(root, file)
+                try:
+                    with open(path, 'r') as f:
+                        res = json.load(f)
+                    
+                    model_type = root.split(os.sep)[-2] if os.sep in root else "unknown"
+                    dataset = root.split(os.sep)[-1]
+                    eval_data = res.get("evaluation", {})
+                    
+                    entry = {
+                        "model": model_type.upper(),
+                        "dataset": dataset,
+                        "accuracy": eval_data.get("test_accuracy_pct") or eval_data.get("accuracy"),
+                        "test_loss": eval_data.get("test_loss") or res.get("test_loss"),
+                        "time": res.get("execution", {}).get("total_duration_seconds", 0),
+                        "flops": res.get("epochs", [{}])[0].get("flops", 0) if res.get("epochs") else 0
+                    }
+                    data.append(entry)
+                except Exception as e:
+                    print(f"{C_RED}Erreur lecture {file}: {e}{C_END}")
+    return pd.DataFrame(data)
+
+def generate_plots(df):
+    if df.empty: return
+    os.makedirs("comparison_plots", exist_ok=True)
+    
+    for dataset in df['dataset'].unique():
+        ds_df = df[df['dataset'] == dataset]
+        models = ds_df['model'].tolist()
         
-        for dataset_name in os.listdir(model_path):
-            dataset_path = os.path.join(model_path, dataset_name)
-            if not os.path.isdir(dataset_path): continue
-            
-            for file in os.listdir(dataset_path):
-                if file.endswith(".json"):
-                    with open(os.path.join(dataset_path, file), "r") as f:
-                        try:
-                            data = json.load(f)
-                            # Extraire les infos utiles
-                            res = {
-                                "model": model_name.upper(),
-                                "dataset": dataset_name,
-                                "filename": file,
-                                "units": data["config"].get("units"),
-                                "layers": data["config"].get("layers"),
-                                "device": data["config"].get("device"),
-                                "time": data["execution"].get("total_duration_seconds", 0),
-                                "test_loss": data["evaluation"].get("test_loss"),
-                                "accuracy": data["evaluation"].get("test_accuracy_pct"),
-                                "f1": data["evaluation"].get("f1_score_macro"),
-                                "mae": data["evaluation"].get("mae"),
-                                "flops": data["epochs"][0].get("flops", 0) if data.get("epochs") else 0
-                            }
-                            results_list.append(res)
-                        except Exception as e:
-                            print(f"Erreur lecture {file}: {e}")
-    return pd.DataFrame(results_list)
+        fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+        fig.suptitle(f"Comparaison Benchmarking - Dataset: {dataset}", fontsize=16)
 
-def plot_dataset_comparison(df, dataset_name, output_dir="comparison_plots"):
-    df_ds = df[df["dataset"] == dataset_name].copy()
-    if df_ds.empty: return
+        # 1. Accuracy / Loss
+        is_classif = ds_df['accuracy'].notna().any()
+        if is_classif:
+            values = ds_df['accuracy'].fillna(0)
+            axes[0].bar(models, values, color='#3498db')
+            axes[0].set_title("Précision (Test %)")
+        else:
+            values = ds_df['test_loss'].fillna(0)
+            axes[0].bar(models, values, color='#e74c3c')
+            axes[0].set_title("Perte (MSE Test)")
 
-    # Si plusieurs tests pour un modèle, on prend le dernier ou le meilleur ?
-    # Ici, on va grouper par modèle et prendre la moyenne ou le max pour simplifier
-    
-    os.makedirs(output_dir, exist_ok=True)
-    
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle(f"Comparaison des Modèles - Dataset: {dataset_name.upper()}", fontsize=20, fontweight='bold')
+        # 2. Execution Time
+        axes[1].bar(models, ds_df['time'], color='#2ecc71')
+        axes[1].set_title("Temps d'exécution (s)")
 
-    # 1. Performance (Accuracy ou MSE)
-    is_classification = df_ds["accuracy"].notnull().any()
-    ax1 = axes[0, 0]
-    if is_classification:
-        perf_data = df_ds.groupby("model")["accuracy"].max()
-        perf_data.plot(kind='bar', ax=ax1, color='skyblue', edgecolor='black')
-        ax1.set_ylabel("Précision (%)")
-        ax1.set_title("Meilleure Précision par Modèle")
-    else:
-        perf_data = df_ds.groupby("model")["test_loss"].min()
-        perf_data.plot(kind='bar', ax=ax1, color='salmon', edgecolor='black')
-        ax1.set_ylabel("MSE (Perte)")
-        ax1.set_title("Plus basse perte (MSE) par Modèle")
-    ax1.grid(axis='y', linestyle='--', alpha=0.7)
+        # 3. Complexity (FLOPS)
+        axes[2].bar(models, ds_df['flops'], color='#f1c40f')
+        axes[2].set_title("Complexité (FLOPS/sample)")
+        axes[2].set_yscale('log')
 
-    # 2. Temps d'entraînement
-    ax2 = axes[0, 1]
-    time_data = df_ds.groupby("model")["time"].mean()
-    time_data.plot(kind='bar', ax=ax2, color='lightgreen', edgecolor='black')
-    ax2.set_ylabel("Temps (secondes)")
-    ax2.set_title("Temps d'entraînement moyen")
-    ax2.grid(axis='y', linestyle='--', alpha=0.7)
-
-    # 3. Complexité (FLOPS)
-    ax3 = axes[1, 0]
-    flops_data = df_ds.groupby("model")["flops"].mean()
-    flops_data.plot(kind='bar', ax=ax3, color='orange', edgecolor='black')
-    ax3.set_ylabel("FLOPS / sample")
-    ax3.set_yscale('log') # Log scale car les différences peuvent être énormes
-    ax3.set_title("Complexité Matérielle (Échelle Log)")
-    ax3.grid(axis='y', linestyle='--', alpha=0.7)
-
-    # 4. Compromis : Précision vs FLOPS
-    ax4 = axes[1, 1]
-    for model in df_ds["model"].unique():
-        sub = df_ds[df_ds["model"] == model]
-        metric = sub["accuracy"] if is_classification else sub["test_loss"]
-        ax4.scatter(sub["flops"], metric, label=model, s=100, alpha=0.7)
-    
-    ax4.set_xscale('log')
-    ax4.set_xlabel("FLOPS / sample")
-    ax4.set_ylabel("Précision (%)" if is_classification else "MSE")
-    ax4.set_title("Compromis : Efficacité vs Performance")
-    ax4.legend()
-    ax4.grid(True, linestyle='--', alpha=0.5)
-
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    save_path = os.path.join(output_dir, f"comparison_{dataset_name}.png")
-    plt.savefig(save_path)
-    print(f"[OK] Dashboard généré pour {dataset_name} -> {save_path}")
-    plt.close()
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+        plt.savefig(f"comparison_plots/comparison_{dataset}.png")
+        print(f"{C_GREEN}[OK]{C_END} Dashboard généré pour {C_BOLD}{dataset}{C_END}")
 
 if __name__ == "__main__":
-    print("\n--- Analyseur de Résultats de Benchmarking ---")
-    df = load_all_results()
-    
-    if df is not None and not df.empty:
-        datasets = df["dataset"].unique()
-        print(f"Datasets détectés : {', '.join(datasets)}")
-        
-        for ds in datasets:
-            plot_dataset_comparison(df, ds)
-            
-        # Affichage d'un tableau résumé dans la console
-        print("\n--- Tableau Récapitulatif Global ---")
-        summary = df.groupby(["dataset", "model"]).agg({
-            "accuracy": "max",
-            "test_loss": "min",
-            "time": "mean",
-            "flops": "mean"
-        }).round(4)
+    print(f"\n{C_BOLD}{C_BLUE}=== ANALYSEUR DE RÉSULTATS ==={C_END}\n")
+    df_results = load_results()
+    if not df_results.empty:
+        generate_plots(df_results)
+        print(f"\n{C_YELLOW}{C_BOLD}--- Tableau Récapitulatif Global ---{C_END}")
+        summary = df_results.groupby(['dataset', 'model'])[['accuracy', 'test_loss', 'time', 'flops']].mean()
         print(summary)
+        print(f"\n{C_BLUE}{C_BOLD}=============================={C_END}")
     else:
-        print("Aucun résultat JSON trouvé dans le dossier 'results/'.")
+        print(f"{C_RED}Aucune donnée trouvée dans 'results/'.{C_END}")
