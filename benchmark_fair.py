@@ -72,8 +72,15 @@ def main():
     units = input(f"Nombre de neurones [{C_YELLOW}32{C_END}]: ") or "32"
     layers = input(f"Nombre de couches [{C_YELLOW}1{C_END}]: ") or "1"
     
-    device = "cuda" if subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0 else "cpu"
-    print(f"\nCalcul sur : {C_GREEN}{device.upper()}{C_END}")
+    # Choix du device
+    has_cuda = subprocess.run(["nvidia-smi"], capture_output=True).returncode == 0
+    def_device = "cuda" if has_cuda else "cpu"
+    
+    device_std = input(f"Device pour modèles Standards [{C_YELLOW}{def_device}{C_END}]: ") or def_device
+    device_adv = input(f"Device pour LTC/CfC [{C_YELLOW}{def_device}{C_END}]: ") or def_device
+    
+    print(f"\nCalcul Standards sur : {C_GREEN}{device_std.upper()}{C_END}")
+    print(f"Calcul LTC/CfC sur : {C_GREEN}{device_adv.upper()}{C_END}")
 
     final_results = []
 
@@ -89,7 +96,7 @@ def main():
             cmd = [
                 sys.executable, "-u", model["script"],
                 "--units", units, "--layers", layers, "--epochs", epochs_std,
-                "--dataset", dataset, "--device", device
+                "--dataset", dataset, "--device", device_std
             ]
             code, train_loss, test_metric = run_command(cmd)
             if code == 0 and train_loss is not None:
@@ -113,7 +120,7 @@ def main():
             cmd = [
                 sys.executable, "-u", model["script"],
                 "--units", units, "--layers", layers, "--epochs", epochs_adv_max,
-                "--dataset", dataset, "--device", device,
+                "--dataset", dataset, "--device", device_adv,
                 "--target_loss", f"{target_loss:.6f}"
             ]
             code, train_loss, test_metric = run_command(cmd)
