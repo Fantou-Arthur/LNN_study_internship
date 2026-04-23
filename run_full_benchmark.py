@@ -36,8 +36,8 @@ def main():
 
     # Configuration par défaut
     models = [
-        {"name": "LTC", "script": "ltc_modern_demo.py"},
-        {"name": "CfC", "script": "CfC.py"},
+        {"name": "LTC", "script": "ltc_modern_demo.py", "epochs_mult": 3}, # LTC/CfC ont souvent besoin de plus d'époques
+        {"name": "CfC", "script": "CfC.py", "epochs_mult": 3},
         {"name": "RNN", "script": "RNN.py"},
         {"name": "LSTM", "script": "LSTM.py"},
         {"name": "GRU", "script": "GRU.py"},
@@ -78,11 +78,16 @@ def main():
             idx = i * len(datasets) + j + 1
             print(f"[{idx}/{total_tests}] Entraînement {C_BOLD}{model['name']}{C_END} sur {C_YELLOW}{dataset}{C_END}...")
             
+            # Appliquer les overrides spécifiques au modèle (ex: epochs_mult)
+            current_epochs = str(int(int(epochs) * model.get("epochs_mult", 1)))
+            current_units = model.get("units_override", units)
+            current_layers = model.get("layers_override", layers)
+
             cmd = [
                 sys.executable, "-u", model["script"],
-                "--units", units,
-                "--layers", layers,
-                "--epochs", epochs,
+                "--units", current_units,
+                "--layers", current_layers,
+                "--epochs", current_epochs,
                 "--batch_size", batch_size,
                 "--dataset", dataset,
                 "--device", device,
