@@ -69,6 +69,7 @@ def main():
     print(f"{C_BOLD}--- CONFIGURATION ---{C_END}")
     epochs_std = input(f"Époques pour modèles Standards [{C_YELLOW}50{C_END}]: ") or "50"
     epochs_adv_max = input(f"Max époques pour LTC/CfC [{C_YELLOW}500{C_END}]: ") or "500"
+    min_epochs_adv = input(f"Min époques pour LTC/CfC [{C_YELLOW}50{C_END}]: ") or "50"
     units = input(f"Nombre de neurones [{C_YELLOW}32{C_END}]: ") or "32"
     layers = input(f"Nombre de couches [{C_YELLOW}1{C_END}]: ") or "1"
     
@@ -109,11 +110,11 @@ def main():
             print(f"{C_RED}Aucune base de référence pour {dataset}. On passe au suivant.{C_END}")
             continue
 
-        target_loss = sum(dataset_train_losses) / len(dataset_train_losses)
-        print(f"\n{C_BOLD}{C_BLUE}Cible calculée pour {dataset} : Loss Train <= {target_loss:.4f}{C_END}")
+        target_loss = float(np.median(dataset_train_losses))
+        print(f"\n{C_BOLD}{C_BLUE}Cible calculée pour {dataset} : Loss Train <= {target_loss:.4f} (Médiane){C_END}")
 
-        # PHASE 2 : ENTRAÎNER LTC/CFC JUSQU'À LA CIBLE
-        print(f"\n{C_BOLD}[PHASE 2] Entraînement LTC/CfC jusqu'à atteindre la cible...{C_END}")
+        # PHASE 2 : ENTRAÎNER LTC/CFC JUSQU'À LA CIBLE OU LIMITE ÉPOQUES
+        print(f"\n{C_BOLD}[PHASE 2] Entraînement LTC/CfC (min {min_epochs_adv} époques, max {epochs_adv_max})...{C_END}")
         
         for model in advanced_models:
             print(f"\n--- {model['name']} (Cible: {target_loss:.4f}) ---")
@@ -121,7 +122,8 @@ def main():
                 sys.executable, "-u", model["script"],
                 "--units", units, "--layers", layers, "--epochs", epochs_adv_max,
                 "--dataset", dataset, "--device", device_adv,
-                "--target_loss", f"{target_loss:.6f}"
+                "--target_loss", f"{target_loss:.6f}",
+                "--min_epochs", min_epochs_adv
             ]
             code, train_loss, test_metric = run_command(cmd)
             

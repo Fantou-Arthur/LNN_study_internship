@@ -202,6 +202,7 @@ if __name__ == "__main__":
     parser.add_argument("--sparsity_train", type=float, default=0.0)
     parser.add_argument("--sparsity_test", type=float, default=0.0)
     parser.add_argument("--sparsity_mode", type=str, default="random")
+    parser.add_argument("--min_epochs", type=int, default=0, help="Nombre d'époques minimum avant arrêt cible")
 
     args = parser.parse_args()
 
@@ -216,10 +217,12 @@ if __name__ == "__main__":
         default_device = "cuda" if torch.cuda.is_available() else "cpu"
         device_type = input(f"Choix du device [{default_device}]: ").lower().strip() or default_device
         sparsity_train, sparsity_test, sparsity_mode = 0.0, 0.0, "random"
+        min_epochs = 0
     else:
         num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units or 32, args.layers, args.epochs or 50, args.target_loss, args.batch_size or 128, args.dataset
         device_type = args.device if args.device else ("cuda" if torch.cuda.is_available() else "cpu")
         sparsity_train, sparsity_test, sparsity_mode = args.sparsity_train, args.sparsity_test, args.sparsity_mode
+        min_epochs = args.min_epochs
 
     device = torch.device(device_type)
     print(f"{C_BOLD}Device:{C_END} {C_GREEN}{device}{C_END} | {C_BOLD}Units:{C_END} {num_units} | {C_BOLD}Dataset:{C_END} {C_YELLOW}{dataset_name}{C_END}")
@@ -277,7 +280,7 @@ if __name__ == "__main__":
         else: patience_counter += 1
         
         flops_stats["epochs"].append({"epoch": epoch + 1, "loss": avg_train_loss, "test_loss": avg_test_loss, "flops": flops_per_sample, "lr": new_lr})
-        if (target_loss > 0 and avg_train_loss <= target_loss) or patience_counter >= patience_stop: break
+        if (target_loss > 0 and (epoch + 1) >= min_epochs and avg_train_loss <= target_loss) or patience_counter >= patience_stop: break
 
     total_time = time.time() - start_time_seconds
     flops_stats["execution"]["total_duration_seconds"] = total_time
