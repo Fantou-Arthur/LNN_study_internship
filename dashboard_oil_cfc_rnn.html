@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Networks: CfC vs RNN Oil Price Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="results/oil_cfc_rnn_data.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --primary: #fbbf24; /* CfC Color */
+            --secondary: #a855f7; /* RNN Color */
+            --accent: #f472b6;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem;
+            background: rgba(251, 191, 36, 0.1);
+            border-radius: 0.5rem;
+        }
+        input[type="range"] {
+            width: 100%;
+            max-width: 600px;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 1rem;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: rgba(255, 255, 255, 0.05);
+            min-width: 200px;
+        }
+        .stat-value {
+            display: block;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        .cfc-text { color: var(--primary); }
+        .rnn-text { color: var(--secondary); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>CfC vs RNN: Oil Price Robustness</h1>
+        <p>Comparison of Liquid (Closed-form Continuous-time) and Standard Recurrent Networks</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="controls">
+                <label for="sparsityRange">Missing Data (Sparsity): <span id="sparsityValue">0</span>%</label>
+                <input type="range" id="sparsityRange" min="0" max="90" step="10" value="0">
+                <p style="font-size: 0.8rem; opacity: 0.7;">Slide to simulate data loss during inference (Sample & Hold mode)</p>
+            </div>
+            
+            <div style="height: 500px; position: relative; margin-top: 1rem;">
+                <canvas id="forecastChart"></canvas>
+            </div>
+
+            <div class="stats" id="modelStats">
+                <!-- Stat items will be injected here -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Drift Resistance: MSE vs. Sparsity</h3>
+            <div style="height: 300px;">
+                <canvas id="robustnessChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = null;
+        let forecastChart = null;
+        let robustnessChart = null;
+
+        async function loadData() {
+            if (typeof oilCompData !== 'undefined') {
+                rawData = oilCompData;
+                initCharts();
+                updateCharts(0);
+            } else {
+                console.error("Data not found. Run run_oil_cfc_rnn_study.py first.");
+                document.body.innerHTML = `<div class="header"><h1>Erreur : Données non trouvées</h1><p>Veuillez lancer <code>python run_oil_cfc_rnn_study.py</code> d'abord.</p></div>`;
+            }
+        }
+
+        function initCharts() {
+            // Forecast Chart
+            const ctx = document.getElementById('forecastChart').getContext('2d');
+            forecastChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: rawData.dates,
+                    datasets: [
+                        { label: 'Actual Price', data: rawData.actual_price, borderColor: '#64748b', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'CfC Prediction', data: [], borderColor: '#fbbf24', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'RNN Prediction', data: [], borderColor: '#a855f7', borderWidth: 2, pointRadius: 0, fill: false, borderDash: [3, 3] }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { labels: { color: '#f8fafc' } },
+                        tooltip: { mode: 'index', intersect: false }
+                    },
+                    scales: {
+                        x: { 
+                            grid: { color: 'rgba(255,255,255,0.05)' }, 
+                            ticks: { 
+                                color: '#64748b', 
+                                maxRotation: 0,
+                                autoSkip: true,
+                                maxTicksLimit: 12 // One per year approx
+                            } 
+                        },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // Robustness Chart
+            const robCtx = document.getElementById('robustnessChart').getContext('2d');
+            const sparsities = rawData.studies.map(s => s.sparsity);
+            robustnessChart = new Chart(robCtx, {
+                type: 'line',
+                data: {
+                    labels: sparsities,
+                    datasets: [
+                        { label: 'CfC MSE', data: rawData.studies.map(s => s.models.CfC.mse), borderColor: '#fbbf24', tension: 0.1 },
+                        { label: 'RNN MSE', data: rawData.studies.map(s => s.models.RNN.mse), borderColor: '#a855f7', tension: 0.1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#f8fafc' } } },
+                    scales: {
+                        x: { title: { display: true, text: 'Missing Data %', color: '#f8fafc' }, ticks: { color: '#64748b' } },
+                        y: { title: { display: true, text: 'MSE (Lower is Better)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+        }
+
+        function updateCharts(sparsity) {
+            const study = rawData.studies.find(s => s.sparsity == sparsity);
+            if (!study) return;
+
+            document.getElementById('sparsityValue').innerText = sparsity;
+            
+            // Update Forecast
+            forecastChart.data.datasets[1].data = study.models.CfC.predictions;
+            forecastChart.data.datasets[2].data = study.models.RNN.predictions;
+            forecastChart.update('none');
+
+            // Update Stats
+            const statsDiv = document.getElementById('modelStats');
+            const cfcMse = study.models.CfC.mse;
+            const rnnMse = study.models.RNN.mse;
+            const diff = ((rnnMse - cfcMse) / rnnMse * 100).toFixed(1);
+            
+            statsDiv.innerHTML = `
+                <div class="stat-item">CfC MSE <span class="stat-value cfc-text">${cfcMse.toFixed(5)}</span></div>
+                <div class="stat-item">RNN MSE <span class="stat-value rnn-text">${rnnMse.toFixed(5)}</span></div>
+                <div class="stat-item">CfC vs RNN <span class="stat-value" style="color: ${diff > 0 ? '#4ade80' : '#f87171'}">${diff > 0 ? '-' : '+'}${Math.abs(diff)}% Error</span></div>
+            `;
+        }
+
+        document.getElementById('sparsityRange').addEventListener('input', (e) => {
+            updateCharts(e.target.value);
+        });
+
+        loadData();
+    </script>
+</body>
+</html>

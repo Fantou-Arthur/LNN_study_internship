@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oil Price Adaptive Study (1986-2026)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="results/oil_adaptive_data.js"></script>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: #161b22;
+            --text: #c9d1d9;
+            --accent: #58a6ff;
+            --cfc: #fbbf24;
+            --ltc: #f43f5e;
+            --rnn: #a855f7;
+            --lstm: #3b82f6;
+            --gru: #10b981;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: var(--accent);
+            font-weight: 300;
+            margin-bottom: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 15px;
+            border-radius: 6px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-3px); }
+        .stat-value {
+            display: block;
+            font-size: 1.4rem;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+        .chart-container {
+            height: 500px;
+            position: relative;
+        }
+        .mini-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .drift-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 15px;
+        }
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            display: inline-block;
+            font-size: 0.8rem;
+        }
+        .cfc-t { color: var(--cfc); }
+        .ltc-t { color: var(--ltc); }
+        .rnn-t { color: var(--rnn); }
+        .lstm-t { color: var(--lstm); }
+        .gru-t { color: var(--gru); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Adaptive Oil Price Forecasting Benchmark (1986-2026)</h1>
+            <div id="driftStatus" class="status-badge">Analyzing Market Stability...</div>
+        </div>
+        
+        <div class="stats-grid" id="summaryCards">
+            <!-- Dynamic -->
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h3>Adaptive Predictions & Price (1989-2026)</h3>
+                <div class="chart-container">
+                    <canvas id="forecastChart"></canvas>
+                </div>
+            </div>
+
+            <div class="mini-grid">
+                <div class="card">
+                    <h3>Rolling MAE (30d)</h3>
+                    <div style="height: 300px;">
+                        <canvas id="maeChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Error Growth Rate (%)</h3>
+                    <div style="height: 300px;">
+                        <canvas id="growthChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Retraining Timeline by Model (Events per Architecture)</h3>
+                <div style="height: 250px;">
+                    <canvas id="timelineChart"></canvas>
+                </div>
+            </div>
+
+            <div class="drift-grid">
+                <div class="card">
+                    <h3>Kolmogorov-Smirnov</h3>
+                    <div style="height: 200px;">
+                        <canvas id="ksChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Population Stability Index (PSI)</h3>
+                    <div style="height: 200px;">
+                        <canvas id="psiChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Jensen-Shannon</h3>
+                    <div style="height: 200px;">
+                        <canvas id="jsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mini-grid">
+                <div class="card">
+                    <h3>Maintenance Cost (Total Retrains)</h3>
+                    <div style="height: 300px;">
+                        <canvas id="costChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Retraining Intensity Over Time</h3>
+                    <div style="height: 300px;">
+                        <canvas id="intensityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = {
+            'CfC': '#fbbf24',
+            'LTC': '#f43f5e',
+            'RNN': '#a855f7',
+            'LSTM': '#3b82f6',
+            'GRU': '#10b981'
+        };
+
+        if (typeof oilAdaptiveData !== 'undefined') {
+            const data = oilAdaptiveData;
+            const models = Object.keys(data.models);
+
+            function getDriftPeriods() {
+                if (!data.drift_metrics) return [];
+                const periods = [];
+                let current = null;
+                const threshold = 0.25;
+                data.drift_metrics.psi.forEach((v, i) => {
+                    const date = data.drift_metrics.labels[i];
+                    if (v > threshold) {
+                        if (!current) current = { start: date };
+                    } else {
+                        if (current) { current.end = date; periods.push(current); current = null; }
+                    }
+                });
+                if (current) { 
+                    current.end = data.drift_metrics.labels[data.drift_metrics.labels.length-1]; 
+                    periods.push(current); 
+                }
+                return periods;
+            }
+
+            const driftPeriods = getDriftPeriods();
+            const annotations = driftPeriods.map((p, i) => ({
+                type: 'box',
+                xMin: p.start,
+                xMax: p.end,
+                backgroundColor: 'rgba(244, 63, 94, 0.05)',
+                borderWidth: 0,
+                label: {
+                    display: i === 0,
+                    content: 'CRITICAL DRIFT',
+                    position: 'start',
+                    color: '#f43f5e',
+                    font: { size: 10, weight: 'bold' }
+                }
+            }));
+            
+            // Summary Cards
+            const summaryDiv = document.getElementById('summaryCards');
+            summaryDiv.innerHTML = models.map(m => `
+                <div class="stat-card">
+                    <div style="font-size: 0.8rem; color: #8b949e; margin-bottom: 8px;">${m}</div>
+                    <div class="stat-value ${m.toLowerCase()}-t">${data.models[m].avg_mse.toFixed(6)}</div>
+                    <div style="font-size: 0.75rem; margin-top: 6px;">Growth: ${data.models[m].avg_growth.toFixed(1)}%</div>
+                    <div style="font-size: 0.7rem; color: #8b949e; margin-top: 4px;">Retrains: ${data.models[m].total_retrains}</div>
+                </div>
+            `).join('');
+
+            // Common Options
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#c9d1d9' } },
+                    annotation: { annotations: annotations }
+                },
+                scales: {
+                    x: { ticks: { color: '#8b949e', autoSkip: true, maxTicksLimit: 12 } },
+                    y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(48, 54, 61, 0.5)' } }
+                }
+            };
+
+            // Forecast Chart
+            new Chart(document.getElementById('forecastChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [
+                        { label: 'Actual', data: data.actual_price_usd, borderColor: '#484f58', borderWidth: 1, pointRadius: 0, fill: false },
+                        ...models.map(m => ({
+                            label: m,
+                            data: data.models[m].predictions_usd,
+                            borderColor: colors[m],
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            fill: false
+                        }))
+                    ]
+                },
+                options: commonOptions
+            });
+
+            // MAE Chart
+            new Chart(document.getElementById('maeChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: models.map(m => ({
+                        label: m,
+                        data: data.models[m].rolling_mae,
+                        borderColor: colors[m],
+                        borderWidth: 1.2,
+                        pointRadius: 0,
+                        fill: false
+                    }))
+                },
+                options: commonOptions
+            });
+
+            // Growth Chart
+            new Chart(document.getElementById('growthChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: models.map(m => ({
+                        label: m,
+                        data: data.models[m].growth_rate,
+                        borderColor: colors[m],
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        fill: false
+                    }))
+                },
+                options: commonOptions
+            });
+
+            // Timeline Chart
+            new Chart(document.getElementById('timelineChart'), {
+                type: 'scatter',
+                data: {
+                    datasets: models.map((m, idx) => ({
+                        label: m,
+                        data: data.models[m].retrain_events.map(date => ({ x: date, y: models.length - 1 - idx })),
+                        backgroundColor: colors[m],
+                        pointRadius: 6
+                    }))
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: { ...commonOptions.plugins, legend: { display: false } },
+                    scales: {
+                        ...commonOptions.scales,
+                        x: { type: 'category', labels: data.dates, ticks: { color: '#8b949e', maxTicksLimit: 12 } },
+                        y: {
+                            ticks: {
+                                color: '#c9d1d9',
+                                callback: (val) => models[models.length - 1 - val]
+                            },
+                            grid: { color: '#30363d' }
+                        }
+                    }
+                }
+            });
+
+            // Drift Charts
+            const renderDrift = (id, points, color) => {
+                new Chart(document.getElementById(id), {
+                    type: 'line',
+                    data: {
+                        labels: data.drift_metrics.labels,
+                        datasets: [{ data: points, borderColor: color, borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: color + '22' }]
+                    },
+                    options: {
+                        ...commonOptions,
+                        plugins: { ...commonOptions.plugins, legend: { display: false } },
+                        scales: { ...commonOptions.scales, x: { ticks: { ...commonOptions.scales.x.ticks, maxTicksLimit: 6 } } }
+                    }
+                });
+            };
+
+            if (data.drift_metrics) {
+                renderDrift('ksChart', data.drift_metrics.ks, '#58a6ff');
+                renderDrift('psiChart', data.drift_metrics.psi, '#f43f5e');
+                renderDrift('jsChart', data.drift_metrics.js, '#10b981');
+
+                // Update Status
+                const lastPsi = data.drift_metrics.psi[data.drift_metrics.psi.length - 1];
+                const statusEl = document.getElementById('driftStatus');
+                if (lastPsi > 0.25) {
+                    statusEl.innerText = "CRITICAL DRIFT DETECTED";
+                    statusEl.style.background = "rgba(244, 63, 94, 0.2)";
+                    statusEl.style.color = "#f43f5e";
+                } else {
+                    statusEl.innerText = "MARKET DISTRIBUTION STABLE";
+                    statusEl.style.background = "rgba(16, 185, 129, 0.2)";
+                    statusEl.style.color = "#10b981";
+                }
+            }
+
+            // Cost & Intensity (Bars)
+            new Chart(document.getElementById('costChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        data: models.map(m => data.models[m].total_retrains),
+                        backgroundColor: models.map(m => colors[m]),
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#8b949e' } },
+                        y: { beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }
+                    }
+                }
+            });
+
+            const allEvents = [];
+            models.forEach(m => data.models[m].retrain_events.forEach(e => allEvents.push(e)));
+            const yearlyCount = {};
+            allEvents.forEach(e => { const y = e.substring(0, 4); yearlyCount[y] = (yearlyCount[y] || 0) + 1; });
+            const years = Object.keys(yearlyCount).sort();
+
+            new Chart(document.getElementById('intensityChart'), {
+                type: 'bar',
+                data: {
+                    labels: years,
+                    datasets: [{
+                        label: 'Global Retrain Frequency',
+                        data: years.map(y => yearlyCount[y]),
+                        backgroundColor: 'rgba(88, 166, 255, 0.5)',
+                        borderColor: '#58a6ff',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#8b949e' } },
+                        y: { beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }
+                    }
+                }
+            });
+
+        } else {
+            document.body.innerHTML = "<h1 style='margin-top:100px;'>Data not found. Run run_oil_adaptive_study.py first.</h1>";
+        }
+    </script>
+</body>
+</html>

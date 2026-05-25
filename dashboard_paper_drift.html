@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interactive Drift Backtester</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="results/paper_drift_metrics.js"></script>
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #38bdf8; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); padding: 2rem; margin: 0; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .controls { background: var(--card); padding: 25px; border-radius: 16px; margin-bottom: 2rem; border: 1px solid rgba(255,255,255,0.05); }
+        .slider-box { display: flex; flex-direction: column; gap: 15px; }
+        input[type=range] { width: 100%; height: 8px; border-radius: 5px; background: #334155; outline: none; cursor: pointer; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .card { background: var(--card); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); height: 350px; }
+        .full { grid-column: span 2; }
+        .status-badge { padding: 8px 16px; border-radius: 8px; font-weight: bold; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1>Drift Backtesting Simulator</h1>
+            <div id="statusBox" class="status-badge">Calculating...</div>
+        </div>
+
+        <div class="controls">
+            <div class="slider-box">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="font-weight: bold; color: var(--accent);">Split Date (End of Training): <span id="currentSplitDate">...</span></span>
+                    <span style="opacity: 0.6;">Move slider to change training horizon</span>
+                </div>
+                <input type="range" id="splitSlider" min="100" max="1000" value="500">
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card full">
+                <h3>Kolmogorov-Smirnov (Distribution Shape)</h3>
+                <canvas id="ksChart"></canvas>
+            </div>
+            <div class="card">
+                <h3>Population Stability Index (PSI)</h3>
+                <canvas id="psiChart"></canvas>
+            </div>
+            <div class="card">
+                <h3>Jensen-Shannon Divergence</h3>
+                <canvas id="jsChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- MATH UTILS ---
+        function getHistogram(data, bins, min, max) {
+            const counts = new Array(bins).fill(0);
+            data.forEach(v => {
+                let b = Math.floor(((v - min) / (max - min)) * bins);
+                if (b >= bins) b = bins - 1;
+                if (b < 0) b = 0;
+                counts[b]++;
+            });
+            return counts.map(c => Math.max(c / data.length, 1e-6));
+        }
+
+        function calculateKS(ref, target) {
+            const sortedRef = [...ref].sort((a, b) => a - b);
+            const sortedTarget = [...target].sort((a, b) => a - b);
+            const allValues = [...new Set([...sortedRef, ...sortedTarget])].sort((a, b) => a - b);
+            let maxDist = 0;
+            allValues.forEach(v => {
+                const cdfRef = sortedRef.filter(x => x <= v).length / sortedRef.length;
+                const cdfTarget = sortedTarget.filter(x => x <= v).length / sortedTarget.length;
+                maxDist = Math.max(maxDist, Math.abs(cdfRef - cdfTarget));
+            });
+            return maxDist;
+        }
+
+        function calculatePSI(expected, actual) {
+            let psi = 0;
+            for (let i = 0; i < expected.length; i++) {
+                psi += (expected[i] - actual[i]) * Math.log(expected[i] / actual[i]);
+            }
+            return psi;
+        }
+
+        function calculateJS(p, q) {
+            const m = p.map((v, i) => 0.5 * (v + q[i]));
+            const kl = (a, b) => a.reduce((sum, v, i) => sum + v * Math.log(v / b[i]), 0);
+            return 0.5 * kl(p, m) + 0.5 * kl(q, m);
+        }
+
+        // --- DASHBOARD LOGIC ---
+        const data = paperRawData;
+        const slider = document.getElementById('splitSlider');
+        slider.max = data.dates.length - 100;
+        slider.min = 200; // Need at least some training data
+        slider.value = data.dates.findIndex(d => d.startsWith('2019-01')); // Default to 2019
+
+        const charts = {};
+        const colors = {'ks': '#3b82f6', 'psi': '#f43f5e', 'js': '#10b981'};
+
+        function update() {
+            const splitIdx = parseInt(slider.value);
+            document.getElementById('currentSplitDate').innerText = data.dates[splitIdx];
+
+            const refData = data.actual.slice(0, splitIdx);
+            const testData = data.actual.slice(splitIdx);
+            const testDates = data.dates.slice(splitIdx);
+
+            // Pre-calculate bins for speed
+            const minPrice = 0, maxPrice = 1;
+            const refHist = getHistogram(refData, 10, minPrice, maxPrice);
+
+            const ksPoints = [], psiPoints = [], jsPoints = [], labels = [];
+            const windowSize = 90, jump = 30;
+
+            for (let i = 0; i < testData.length - windowSize; i += jump) {
+                const win = testData.slice(i, i + windowSize);
+                const winHist = getHistogram(win, 10, minPrice, maxPrice);
+
+                labels.push(testDates[i + windowSize]);
+                ksPoints.push(calculateKS(refData, win));
+                psiPoints.push(calculatePSI(refHist, winHist));
+                jsPoints.push(calculateJS(refHist, winHist));
+            }
+
+            refreshChart('ksChart', labels, ksPoints, colors.ks, 0.1);
+            refreshChart('psiChart', labels, psiPoints, colors.psi, 0.25);
+            refreshChart('jsChart', labels, jsPoints, colors.js, 0.1);
+
+            // Dynamic Status
+            const lastIdx = ksPoints.length - 1;
+            let alerts = 0;
+            if (ksPoints[lastIdx] > 0.1) alerts++;
+            if (psiPoints[lastIdx] > 0.25) alerts++;
+            if (jsPoints[lastIdx] > 0.1) alerts++;
+            
+            const statusEl = document.getElementById('statusBox');
+            statusEl.innerText = alerts >= 2 ? `RETRAIN NEEDED (${alerts}/3)` : "STABLE";
+            statusEl.style.backgroundColor = alerts >= 2 ? "rgba(244,63,94,0.2)" : "rgba(16,185,129,0.2)";
+            statusEl.style.color = alerts >= 2 ? "#f43f5e" : "#10b981";
+        }
+
+        function refreshChart(id, labels, points, color, thresh) {
+            if (charts[id]) charts[id].destroy();
+            const ctx = document.getElementById(id).getContext('2d');
+            charts[id] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: points, borderColor: color, borderWidth: 2, pointRadius: 0, fill: true,
+                        backgroundColor: color + '11'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#64748b', maxTicksLimit: 10 } },
+                        y: { beginAtZero: true, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+        }
+
+        slider.oninput = update;
+        update();
+    </script>
+</body>
+</html>

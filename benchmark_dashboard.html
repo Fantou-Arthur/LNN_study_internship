@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemma Stress Test: vLLM vs Ollama</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0a0b10;
+            --card-bg: #15171f;
+            --accent-vllm: #4f46e5;
+            --accent-ollama: #f43f5e;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --glass-border: rgba(255, 255, 255, 0.05);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            background-image: radial-gradient(circle at 50% 0%, #1e1b4b 0%, transparent 50%);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            text-align: center;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(to right, #818cf8, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            background: var(--card-bg);
+            padding: 0.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        button.filter-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        button.filter-btn.active {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-main);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            padding: 1.5rem;
+            border-radius: 20px;
+            border: 1px solid var(--glass-border);
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, var(--card-accent) 0%, transparent 70%);
+            opacity: 0.1;
+            filter: blur(20px);
+        }
+
+        .stat-card.vllm { --card-accent: var(--accent-vllm); }
+        .stat-card.ollama { --card-accent: var(--accent-ollama); }
+
+        .stat-label {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .stat-unit {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-left: 0.5rem;
+        }
+
+        .chart-container {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 24px;
+            border: 1px solid var(--glass-border);
+            margin-bottom: 2rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .chart-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 400px !important;
+        }
+
+        .legend-custom {
+            display: flex;
+            gap: 2rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            h1 { font-size: 2rem; }
+            .dashboard-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Stress Test Analysis</h1>
+            <p class="subtitle">Benchmarks Gemma 4 (e4b) - vLLM vs Ollama</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group" id="context-filters">
+                <!-- Filters generated by JS -->
+            </div>
+        </div>
+
+        <div class="dashboard-grid">
+            <div class="stat-card vllm">
+                <div class="stat-label">Max throughput vLLM</div>
+                <div class="stat-value" id="max-vllm">--</div>
+                <span class="stat-unit">tokens/s</span>
+            </div>
+            <div class="stat-card ollama">
+                <div class="stat-label">Max throughput Ollama</div>
+                <div class="stat-value" id="max-ollama">--</div>
+                <span class="stat-unit">tokens/s</span>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Scalability Ratio</div>
+                <div class="stat-value" id="scale-ratio">--</div>
+                <span class="stat-unit">vLLM / Ollama</span>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">Total Throughput vs Concurrency</div>
+                <div class="legend-custom">
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: var(--accent-vllm);"></div>
+                        <span>vLLM</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color" style="background: var(--accent-ollama);"></div>
+                        <span>Ollama</span>
+                    </div>
+                </div>
+            </div>
+            <canvas id="throughputChart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-header">
+                <div class="chart-title">Efficiency (Tokens/s per User)</div>
+            </div>
+            <canvas id="efficiencyChart"></canvas>
+        </div>
+    </div>
+
+    <script src="benchmark_data.js"></script>
+    <script>
+        let currentContext = 512;
+        let throughputChart, efficiencyChart;
+
+        function init() {
+            const contexts = [...new Set(benchmarkData.vllm.map(d => d.context))].sort((a, b) => a - b);
+            const filterContainer = document.getElementById('context-filters');
+            
+            contexts.forEach(ctx => {
+                const btn = document.createElement('button');
+                btn.className = `filter-btn ${ctx === currentContext ? 'active' : ''}`;
+                btn.textContent = ctx;
+                btn.onclick = () => setContext(ctx);
+                filterContainer.appendChild(btn);
+            });
+
+            updateStats();
+            renderCharts();
+        }
+
+        function setContext(ctx) {
+            currentContext = ctx;
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.textContent) === ctx);
+            });
+            updateStats();
+            updateCharts();
+        }
+
+        function updateStats() {
+            const vData = benchmarkData.vllm.filter(d => d.context === currentContext);
+            const oData = benchmarkData.ollama.filter(d => d.context === currentContext);
+
+            const maxV = Math.max(...vData.map(d => d.total_tok_s));
+            const maxO = Math.max(...oData.map(d => d.total_tok_s));
+
+            document.getElementById('max-vllm').textContent = maxV.toFixed(1);
+            document.getElementById('max-ollama').textContent = maxO.toFixed(1);
+            document.getElementById('scale-ratio').textContent = (maxV / maxO).toFixed(2) + 'x';
+        }
+
+        function getChartData() {
+            const vData = benchmarkData.vllm.filter(d => d.context === currentContext);
+            const oData = benchmarkData.ollama.filter(d => d.context === currentContext);
+
+            // X-axis: All unique user counts
+            const labels = [...new Set([...vData.map(d => d.users), ...oData.map(d => d.users)])].sort((a, b) => a - b);
+
+            return {
+                labels,
+                vTotal: labels.map(l => vData.find(d => d.users === l)?.total_tok_s || null),
+                oTotal: labels.map(l => oData.find(d => d.users === l)?.total_tok_s || null),
+                vEff: labels.map(l => vData.find(d => d.users === l)?.per_user_tok_s || null),
+                oEff: labels.map(l => oData.find(d => d.users === l)?.per_user_tok_s || null)
+            };
+        }
+
+        function renderCharts() {
+            const data = getChartData();
+            const ctxT = document.getElementById('throughputChart').getContext('2d');
+            const ctxE = document.getElementById('efficiencyChart').getContext('2d');
+
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8' },
+                        title: { display: true, text: 'Concurrent Users', color: '#94a3b8' }
+                    }
+                },
+                interaction: { intersect: false, mode: 'index' }
+            };
+
+            throughputChart = new Chart(ctxT, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: 'vLLM',
+                            data: data.vTotal,
+                            borderColor: '#4f46e5',
+                            backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        },
+                        {
+                            label: 'Ollama',
+                            data: data.oTotal,
+                            borderColor: '#f43f5e',
+                            backgroundColor: 'rgba(244, 63, 94, 0.1)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 6,
+                            pointHoverRadius: 8
+                        }
+                    ]
+                },
+                options: commonOptions
+            });
+
+            efficiencyChart = new Chart(ctxE, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: 'vLLM',
+                            data: data.vEff,
+                            backgroundColor: '#4f46e5',
+                            borderRadius: 6
+                        },
+                        {
+                            label: 'Ollama',
+                            data: data.oEff,
+                            backgroundColor: '#f43f5e',
+                            borderRadius: 6
+                        }
+                    ]
+                },
+                options: commonOptions
+            });
+        }
+
+        function updateCharts() {
+            const data = getChartData();
+            
+            throughputChart.data.labels = data.labels;
+            throughputChart.data.datasets[0].data = data.vTotal;
+            throughputChart.data.datasets[1].data = data.oTotal;
+            throughputChart.update();
+
+            efficiencyChart.data.labels = data.labels;
+            efficiencyChart.data.datasets[0].data = data.vEff;
+            efficiencyChart.data.datasets[1].data = data.oEff;
+            efficiencyChart.update();
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monthly Trade Resilience V2 | B200 Premium</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <!-- Loads the V2 metrics -->
+    <script src="results/monthly_v2_metrics.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #05070a;
+            --glass: rgba(22, 27, 34, 0.75);
+            --border: rgba(255, 255, 255, 0.08);
+            --accent: #58a6ff;
+            --critical: #f43f5e;
+            --stable: #10b981;
+            --warning: #fbbf24;
+            --text-main: #e6edf3;
+            --text-dim: #8b949e;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top right, #0d1117, #05070a);
+            color: var(--text-main);
+            margin: 0;
+            padding: 30px;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1600px; margin: 0 auto; display: flex; flex-direction: column; gap: 25px; }
+
+        /* Header & Status */
+        .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+        h1 { margin: 0; font-weight: 600; font-size: 1.8rem; background: linear-gradient(90deg, #fff, var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .subtitle { font-size: 0.85rem; color: var(--text-dim); margin-top: 5px; }
+        .status-badge { padding: 8px 20px; border-radius: 30px; font-size: 0.75rem; font-weight: 600; letter-spacing: 1px; border: 1px solid var(--border); backdrop-filter: blur(10px); }
+
+        /* Grid System */
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; }
+        .maintenance-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .quad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; }
+
+        /* Cards */
+        .card {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        .card h3 { margin: 0 0 15px 0; font-size: 0.9rem; font-weight: 400; color: var(--text-dim); display: flex; align-items: center; gap: 8px; }
+        .card h3::before { content: ''; width: 3px; height: 12px; background: var(--accent); border-radius: 2px; }
+
+        .stat-item { text-align: center; }
+        .stat-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
+        .stat-val { font-size: 1.5rem; font-weight: 600; margin: 5px 0; }
+
+        .chart-wrap { height: 350px; width: 100%; }
+        .mini-chart { height: 200px; }
+        .full-width { grid-column: 1 / -1; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div>
+            <h1>Adaptive Resilience Benchmark | Monthly B200 V2</h1>
+            <div class="subtitle">Next-Generation Option C Pipeline: Product-Aware Embeddings & Topologically Anchored GAT</div>
+        </div>
+        <div id="driftStatus" class="status-badge">ANALYZING MARKET STABILITY...</div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-grid" id="summaryCards"></div>
+
+    <!-- Temporal Error (MAE) - FULL WIDTH -->
+    <div class="card full-width">
+        <h3>Temporal Error (MAE) over Time (Product-Aware Log Scale)</h3>
+        <div class="chart-wrap" style="height: 450px;"><canvas id="maeChart"></canvas></div>
+    </div>
+
+    <!-- Forecast Accuracy -->
+    <div class="card full-width">
+        <h3>Forecast Accuracy (Price/Value Prediction vs Reality in USD)</h3>
+        <div class="chart-wrap"><canvas id="forecastChart"></canvas></div>
+    </div>
+
+    <!-- Macro-SMAPE -->
+    <div class="card full-width">
+        <h3>Macro-SMAPE Error (%) (Calculated on Monthly Aggregates)</h3>
+        <div class="chart-wrap"><canvas id="smapeChart"></canvas></div>
+    </div>
+
+    <!-- Cumulative R2 -->
+    <div class="card full-width">
+        <h3>Cumulative R² Score (Calculated on Monthly Aggregates History)</h3>
+        <div class="chart-wrap"><canvas id="r2Chart"></canvas></div>
+    </div>
+
+    <!-- Maintenance Intensity & Timeline -->
+    <div class="maintenance-row">
+        <div class="card">
+            <h3>Retraining Intensity Over Time (Sum of Architecture Updates)</h3>
+            <div class="mini-chart" style="height: 300px;"><canvas id="intensityChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>Retraining Timeline by Model (Events per Architecture)</h3>
+            <div class="mini-chart" style="height: 300px;"><canvas id="timelineChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Drift Metrics -->
+    <div class="quad-grid">
+        <div class="card">
+            <h3>KS-Test (Distribution Shift)</h3>
+            <div class="mini-chart"><canvas id="ksChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>PSI (Population Stability)</h3>
+            <div class="mini-chart"><canvas id="psiChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>JS-Divergence (Statistical Gap)</h3>
+            <div class="mini-chart"><canvas id="jsChart"></canvas></div>
+        </div>
+    </div>
+
+    <!-- Costs & Time -->
+    <div class="maintenance-row">
+        <div class="card">
+            <h3>Maintenance Load (Total Retrains)</h3>
+            <div class="mini-chart"><canvas id="costChart"></canvas></div>
+        </div>
+        <div class="card">
+            <h3>Computational Time (Initial + Retrains)</h3>
+            <div class="mini-chart"><canvas id="timeChart"></canvas></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const colors = {
+        'GAT': '#0ea5e9', 'CfC': '#fbbf24', 'LTC': '#f43f5e',
+        'LSTM': '#3b82f6', 'GRU': '#10b981', 'Market': '#484f58'
+    };
+
+    // Load V2 Metrics
+    if (typeof b200AdaptiveMetricsDataV2 !== 'undefined') {
+        const data = b200AdaptiveMetricsDataV2;
+        const models = Object.keys(data.models);
+        const dates = data.dates;
+
+        // 0. Update Summary Stats
+        const summaryGrid = document.getElementById('summaryCards');
+        summaryGrid.innerHTML = models.map(m => {
+            const mData = data.models[m];
+            const mae = mData.rolling_mae[mData.rolling_mae.length - 1] || 0;
+            const growth = mData.avg_growth || 0;
+            return `
+                <div class="card stat-item">
+                    <div class="stat-label">${m} Avg MAE (V2)</div>
+                    <div class="stat-val" style="color: ${colors[m]}">${mae.toFixed(6)}</div>
+                    <div style="font-size: 0.65rem; color: var(--warning); font-weight: 600;">Growth: ${growth.toFixed(1)}%</div>
+                    <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 4px;">${mData.retrain_events.length} Retrains</div>
+                </div>
+            `;
+        }).join('');
+
+        // Chart Global Config
+        const chartConfig = (yMax = null, isArea = false) => ({
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'top', align: 'end', labels: { color: '#8b949e', font: { size: 10 }, usePointStyle: true, boxWidth: 6 } },
+                tooltip: { backgroundColor: '#161b22', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 12 },
+                zoom: {
+                    pan: { enabled: true, mode: 'x', threshold: 10 },
+                    zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
+                }
+            },
+            scales: {
+                x: { 
+                    grid: { display: false }, 
+                    ticks: { 
+                        color: '#484f58', font: { size: 9 }, maxRotation: 45, autoSkip: true,
+                        callback: function(val) {
+                            const l = this.getLabelForValue(val);
+                            return (l && l.length === 6) ? l.substring(0,4)+'/'+l.substring(4) : l;
+                        }
+                    } 
+                },
+                y: { grid: { color: 'rgba(48, 54, 61, 0.3)' }, ticks: { color: '#484f58', font: { size: 9 } }, beginAtZero: true, max: yMax }
+            }
+        });
+
+        // 1. Forecast Chart
+        new Chart(document.getElementById('forecastChart'), {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [
+                    { label: 'Market Reality', data: data.actual_price_usd, borderColor: colors.Market, borderDash: [5,5], borderWidth: 2, pointRadius: 0 },
+                    ...models.map(m => ({ label: m, data: data.models[m].predictions_usd, borderColor: colors[m], borderWidth: 1.5, pointRadius: 0 }))
+                ]
+            },
+            options: chartConfig()
+        });
+
+        // 1.5 Calculate Macro-SMAPE and Cumulative R2
+        models.forEach(m => {
+            let sum_se = 0;
+            let sum_y = 0;
+            let sum_y2 = 0;
+
+            data.models[m].macro_smape = data.models[m].predictions_usd.map((pred, i) => {
+                const act = data.actual_price_usd[i];
+                if (act === 0 && pred === 0) return 0;
+                return (Math.abs(pred - act) / ((Math.abs(act) + Math.abs(pred)) / 2)) * 100;
+            });
+
+            data.models[m].cumulative_r2 = data.models[m].predictions_usd.map((pred, i) => {
+                const act = data.actual_price_usd[i];
+                sum_se += Math.pow(act - pred, 2);
+                sum_y += act;
+                sum_y2 += act * act;
+                const count = i + 1;
+                if (count < 2) return null; // Need at least 2 points for variance
+                const mean_y = sum_y / count;
+                const sst = sum_y2 - count * mean_y * mean_y;
+                if (sst === 0) return 0;
+                return 1 - (sum_se / sst);
+            });
+        });
+
+        // 1.6 Render Macro-SMAPE
+        new Chart(document.getElementById('smapeChart'), {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: models.map(m => ({ label: m, data: data.models[m].macro_smape, borderColor: colors[m], borderWidth: 1.5, pointRadius: 0 }))
+            },
+            options: chartConfig()
+        });
+
+        // 1.7 Render Cumulative R2
+        new Chart(document.getElementById('r2Chart'), {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: models.map(m => ({ label: m, data: data.models[m].cumulative_r2, borderColor: colors[m], borderWidth: 1.5, pointRadius: 0 }))
+            },
+            options: chartConfig()
+        });
+
+        // 2. MAE Chart
+        new Chart(document.getElementById('maeChart'), {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: models.map(m => ({ label: m, data: data.models[m].rolling_mae, borderColor: colors[m], borderWidth: 2, pointRadius: 0, tension: 0.3 }))
+            },
+            options: chartConfig()
+        });
+
+        // 3. Retraining Intensity (Aggregated)
+        const intensityMap = {};
+        dates.forEach(d => intensityMap[d] = 0);
+        models.forEach(m => data.models[m].retrain_events.forEach(ev => { if(intensityMap[ev] !== undefined) intensityMap[ev]++; }));
+        
+        new Chart(document.getElementById('intensityChart'), {
+            type: 'bar',
+            data: { labels: dates, datasets: [{ label: 'Updates', data: dates.map(d => intensityMap[d]), backgroundColor: '#58a6ffcc', borderRadius: 4 }] },
+            options: chartConfig()
+        });
+
+        // 4. Retraining Timeline (Bubble/Scatter)
+        const timelineDatasets = models.map((m, idx) => ({
+            label: m,
+            data: data.models[m].retrain_events.map(ev => ({ x: dates.indexOf(ev), y: idx })),
+            backgroundColor: colors[m],
+            pointRadius: 8,
+            pointHoverRadius: 10
+        }));
+
+        new Chart(document.getElementById('timelineChart'), {
+            type: 'scatter',
+            data: { datasets: timelineDatasets },
+            options: {
+                ...chartConfig(),
+                scales: {
+                    x: { ...chartConfig().scales.x, ticks: { ...chartConfig().scales.x.ticks, stepSize: 1 } },
+                    y: { 
+                        grid: { color: 'rgba(48, 54, 61, 0.3)' },
+                        ticks: { color: '#e6edf3', callback: (v) => models[v] || '', stepSize: 1 },
+                        min: -0.5, max: models.length - 0.5
+                    }
+                }
+            }
+        });
+
+        // 5. Drift Monitoring
+        const renderMini = (id, points, color) => new Chart(document.getElementById(id), {
+            type: 'line',
+            data: { labels: data.drift_metrics.labels, datasets: [{ data: points, borderColor: color, backgroundColor: color+'22', fill: true, pointRadius: 0 }] },
+            options: { ...chartConfig(), plugins: { legend: { display: false } } }
+        });
+        renderMini('ksChart', data.drift_metrics.ks, '#58a6ff');
+        renderMini('psiChart', data.drift_metrics.psi, '#f43f5e');
+        renderMini('jsChart', data.drift_metrics.js, '#fbbf24');
+
+        // 6. Maintenance Costs
+        new Chart(document.getElementById('costChart'), {
+            type: 'bar',
+            data: { labels: models, datasets: [{ data: models.map(m => data.models[m].retrain_events.length), backgroundColor: models.map(m => colors[m]) }] },
+            options: { ...chartConfig(), plugins: { legend: { display: false } } }
+        });
+
+        // 7. Comp Time
+        new Chart(document.getElementById('timeChart'), {
+            type: 'bar',
+            data: {
+                labels: models,
+                datasets: [
+                    { label: 'Initial Training', data: models.map(m => data.models[m].time_cost_seconds), backgroundColor: models.map(m => colors[m]+'cc') },
+                    { label: 'Retraining Time', data: models.map(m => data.models[m].retrain_time_seconds), backgroundColor: '#484f58cc' }
+                ]
+            },
+            options: { ...chartConfig(), scales: { x: { stacked: true }, y: { stacked: true } } }
+        });
+
+        // Status Badge
+        const lastPsi = data.drift_metrics.psi[data.drift_metrics.psi.length - 1];
+        const statusEl = document.getElementById('driftStatus');
+        if (lastPsi > 0.25) {
+            statusEl.innerText = "CRITICAL DRIFT DETECTED";
+            statusEl.style.color = "var(--critical)";
+            statusEl.style.borderColor = "var(--critical)";
+        } else {
+            statusEl.innerText = "MARKET DISTRIBUTION STABLE";
+            statusEl.style.color = "var(--stable)";
+            statusEl.style.borderColor = "var(--stable)";
+        }
+
+    } else {
+        document.body.innerHTML = "<div style='text-align:center; padding-top:100px;'><h2>Data Script (V2 Metrics) Missing</h2><p>Run <code>python Training_Model_Monthly_V2.py</code> first to generate the V2 results.</p></div>";
+    }
+</script>
+</body>
+</html>

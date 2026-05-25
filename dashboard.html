@@ -1,79 +1,110 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Robustness Dashboard</title>
+    <title>AI Robustness Dashboard | Advanced Analytics</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --accent-color: #38bdf8;
+            --bg-color: #0b0f19;
+            --card-bg: #161b2b;
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
             --text-main: #f8fafc;
             --text-dim: #94a3b8;
+            --glass-bg: rgba(22, 27, 43, 0.7);
+            --border-color: #2d3748;
         }
 
         body {
             margin: 0;
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: 'Outfit', 'Inter', sans-serif;
             background-color: var(--bg-color);
             color: var(--text-main);
             display: flex;
             height: 100vh;
             overflow: hidden;
+            background-image: radial-gradient(circle at 50% 50%, #1e293b 0%, #0b0f19 100%);
         }
 
         /* Sidebar */
         .sidebar {
-            width: 260px;
+            width: 300px;
             background-color: var(--card-bg);
-            border-right: 1px solid #334155;
+            border-right: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
-            padding: 20px;
+            padding: 30px 20px;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+            z-index: 10;
         }
 
         .logo {
             font-size: 1.5rem;
-            font-weight: bold;
-            margin-bottom: 30px;
-            color: var(--accent-color);
+            font-weight: 600;
+            margin-bottom: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
         }
 
-        .menu-title {
+        .section-title {
             text-transform: uppercase;
             font-size: 0.75rem;
-            letter-spacing: 0.1em;
+            letter-spacing: 0.15em;
             color: var(--text-dim);
-            margin-bottom: 10px;
-            margin-top: 20px;
+            margin: 25px 0 12px 10px;
+            font-weight: 700;
         }
 
-        .dataset-btn {
-            background: transparent;
-            border: none;
-            color: var(--text-dim);
-            text-align: left;
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        select, input[type="text"] {
+            width: 100%;
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            color: white;
             padding: 12px 15px;
-            border-radius: 8px;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            appearance: none;
             cursor: pointer;
             transition: all 0.2s;
-            margin-bottom: 5px;
-            font-size: 1rem;
         }
 
-        .dataset-btn:hover {
-            background-color: #334155;
-            color: var(--text-main);
+        .tab-selector {
+            display: flex;
+            background: #0f172a;
+            padding: 4px;
+            border-radius: 12px;
+            margin-bottom: 30px;
         }
 
-        .dataset-btn.active {
-            background-color: var(--accent-color);
+        .tab-btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: transparent;
+            color: var(--text-dim);
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s;
+            font-size: 0.85rem;
+        }
+
+        .tab-btn.active {
+            background: var(--accent-primary);
             color: white;
-            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.4);
         }
 
         /* Main Content */
@@ -83,91 +114,81 @@
             flex-direction: column;
             padding: 40px;
             overflow-y: auto;
-            align-items: center;
+            position: relative;
         }
 
-        .header {
-            width: 100%;
-            max-width: 1000px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-        }
+        .header { margin-bottom: 30px; }
+        .header h1 { margin: 0; font-size: 2.5rem; font-weight: 600; }
+        .header p { color: var(--text-dim); margin: 8px 0 0; font-size: 1.1rem; }
 
-        .title-area h1 {
-            margin: 0;
-            font-size: 2rem;
-        }
-
-        .title-area p {
-            margin: 5px 0 0;
-            color: var(--text-dim);
-        }
-
-        .controls {
-            width: 100%;
-            max-width: 1000px;
-            background: var(--card-bg);
-            padding: 25px;
-            border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            margin-bottom: 30px;
+        .viz-wrapper {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.6);
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            align-items: center;
+            min-height: 600px;
+            position: relative;
         }
 
-        .slider-container {
+        .slider-box {
+            width: 100%;
+            max-width: 800px;
+            padding: 15px 30px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 16px;
+            margin-bottom: 20px;
             display: flex;
             align-items: center;
+            gap: 25px;
+        }
+
+        .val-badge {
+            background: var(--accent-primary);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+
+        .img-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
             gap: 20px;
         }
 
-        input[type=range] {
-            flex: 1;
-            accent-color: var(--accent-color);
-            cursor: pointer;
-        }
+        #display-image { max-width: 100%; border-radius: 12px; background: white; padding: 5px; }
 
-        .sparsity-value {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--accent-color);
-            min-width: 80px;
-        }
-
-        .viz-container {
+        /* Chart Layout */
+        #charts-container {
+            display: none;
             width: 100%;
-            max-width: 1000px;
-            background: white;
-            padding: 10px;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .chart-card {
+            background: rgba(255,255,255,0.05);
             border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: flex;
-            justify-content: center;
-            min-height: 500px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
         }
 
-        #display-image {
-            max-width: 100%;
-            border-radius: 8px;
-        }
-
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 400px;
+        .chart-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 0.9rem;
             color: var(--text-dim);
+            text-transform: uppercase;
             text-align: center;
-        }
-
-        /* Glassmorphism utility */
-        .glass {
-            backdrop-filter: blur(10px);
-            background: rgba(30, 41, 59, 0.7);
         }
 
     </style>
@@ -175,96 +196,223 @@
 <body>
     <div class="sidebar">
         <div class="logo">
-            <span>💠</span> Robustness VIZ
-        </div>
-        
-        <div class="menu-title">Datasets</div>
-        <div id="dataset-list">
-            <!-- Buttons will be injected here -->
+            <span>💠</span> Robustness Lab
         </div>
 
-        <div style="margin-top: auto; font-size: 0.8rem; color: var(--text-dim);">
-            Denmark Internship Project
+        <div class="tab-selector">
+            <button class="tab-btn active" id="tab-preds" onclick="setTab('preds')">Predictions</button>
+            <button class="tab-btn" id="tab-curves" onclick="setTab('curves')">Robustness</button>
+            <button class="tab-btn" id="tab-perf" onclick="setTab('perf')">Performance</button>
+        </div>
+
+        <div class="section-title">Analysis Subject</div>
+        <div class="control-group">
+            <select id="ds-select" onchange="update()">
+                <option value="sine">Sine Wave</option>
+                <option value="har">Human Activity (HAR)</option>
+                <option value="occupancy">Occupancy</option>
+                <option value="gesture">Gesture Recognition</option>
+                <option value="traffic">Traffic Volume</option>
+                <option value="physionet">PhysioNet (Medical)</option>
+            </select>
+        </div>
+
+        <div class="section-title">Training Configuration</div>
+        <div class="control-group">
+            <label style="font-size: 0.8rem; margin-bottom: 5px; display: block;">Training Sparsity</label>
+            <select id="train-sp-select" onchange="update()"></select>
+        </div>
+        <div class="control-group">
+            <label style="font-size: 0.8rem; margin-bottom: 5px; display: block;">Training Mode</label>
+            <select id="train-mode-select" onchange="update()">
+                <option value="random">Random Removal</option>
+                <option value="periodic">Periodic Removal</option>
+            </select>
         </div>
     </div>
 
     <div class="main-content">
         <div class="header">
-            <div class="title-area">
-                <h1 id="current-dataset-name">Sélectionnez un dataset</h1>
-                <p id="current-dataset-desc">Visualisation comparative des prédictions multi-modèles</p>
-            </div>
+            <h1 id="view-title">Predictions Analysis</h1>
+            <p id="view-desc">Compare how different architectures handle missing data points.</p>
         </div>
 
-        <div class="controls glass">
-            <div class="menu-title" style="margin-top: 0">Niveau de Sparsité (Données manquantes)</div>
-            <div class="slider-container">
-                <input type="range" id="sparsity-slider" min="5" max="95" step="5" value="5">
-                <div class="sparsity-value"><span id="sparsity-label">5</span>%</div>
+        <div class="viz-wrapper">
+            <div class="slider-box" id="eval-slider-box">
+                <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim); text-transform: uppercase;">Evaluation Sparsity</span>
+                <input type="range" id="eval-sp-slider" min="0" max="95" step="5" value="0" oninput="updateLabel()" style="flex:1; accent-color: var(--accent-primary);">
+                <div class="val-badge"><span id="eval-sp-label">0</span>%</div>
             </div>
-            <div id="mode-display" style="font-size: 0.8rem; color: var(--text-dim);">Mode: Random</div>
-        </div>
 
-        <div class="viz-container" id="viz-box">
-            <div class="empty-state" id="empty-msg">
-                <p>Aucune image chargée. Assurez-vous d'avoir lancé <code>visualize_predictions.py</code></p>
+            <div id="model-selector-box" style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;">
+                <button class="tab-btn active model-btn" onclick="setModel('all')">Compare ALL</button>
+                <button class="tab-btn model-btn" onclick="setModel('ltc')">LTC</button>
+                <button class="tab-btn model-btn" onclick="setModel('cfc')">CfC</button>
+                <button class="tab-btn model-btn" onclick="setModel('rnn')">RNN</button>
+                <button class="tab-btn model-btn" onclick="setModel('lstm')">LSTM</button>
+                <button class="tab-btn model-btn" onclick="setModel('gru')">GRU</button>
+                <button class="tab-btn model-btn" onclick="setModel('cnn')">CNN</button>
             </div>
-            <img src="" id="display-image" style="display: none;">
+
+            <div id="charts-container">
+                <div class="chart-card">
+                    <h3 id="metric-title">Performance (MSE)</h3>
+                    <canvas id="chart-metric"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Training Time (s)</h3>
+                    <canvas id="chart-time"></canvas>
+                </div>
+                <div class="chart-card">
+                    <h3>Complexity (FLOPS/s)</h3>
+                    <canvas id="chart-flops"></canvas>
+                </div>
+            </div>
+
+            <div class="img-container" id="img-box">
+                <div class="empty-msg" id="msg-box">Loading analytics...</div>
+                <img src="" id="display-image" style="display: none;" onerror="handleError()">
+            </div>
         </div>
     </div>
 
     <script>
-        const datasets = ["sine", "har", "occupancy", "gesture", "traffic", "physionet"];
-        let currentDataset = "";
-        let currentSparsity = 5;
+        let currentTab = 'preds';
+        let currentModel = 'all';
+        let statsData = {};
+        let charts = {};
 
-        const listEl = document.getElementById('dataset-list');
-        const slider = document.getElementById('sparsity-slider');
-        const label = document.getElementById('sparsity-label');
-        const img = document.getElementById('display-image');
-        const emptyMsg = document.getElementById('empty-msg');
-        const dsTitle = document.getElementById('current-dataset-name');
+        const dsSelect = document.getElementById('ds-select');
+        const trainSpSelect = document.getElementById('train-sp-select');
+        const modeSelect = document.getElementById('train-mode-select');
+        const evalSlider = document.getElementById('eval-sp-slider');
+        const evalLabel = document.getElementById('eval-sp-label');
+        const displayImg = document.getElementById('display-image');
+        const msgBox = document.getElementById('msg-box');
+        const sliderBox = document.getElementById('eval-slider-box');
+        const modelBox = document.getElementById('model-selector-box');
+        const chartsContainer = document.getElementById('charts-container');
+        const imgBox = document.getElementById('img-box');
 
-        // Init buttons
-        datasets.forEach(ds => {
-            const btn = document.createElement('button');
-            btn.className = 'dataset-btn';
-            btn.innerText = ds.toUpperCase();
-            btn.onclick = () => selectDataset(ds, btn);
-            listEl.appendChild(btn);
-        });
-
-        function selectDataset(ds, btn) {
-            currentDataset = ds;
-            document.querySelectorAll('.dataset-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            dsTitle.innerText = ds.toUpperCase();
-            updateImage();
+        // Populate training sparsity
+        for(let i=0; i<=95; i+=5) {
+            const opt = document.createElement('option');
+            opt.value = i; opt.innerText = i + "% missing (train)";
+            trainSpSelect.appendChild(opt);
         }
 
-        function updateImage() {
-            if (!currentDataset) return;
-            
-            // Format: results/visualizations/{dataset}/compare_preds_sp{sparsity}_random.png
-            const path = `results/visualizations/${currentDataset}/compare_preds_sp${currentSparsity}_random.png`;
-            
-            img.src = path;
-            img.style.display = 'block';
-            emptyMsg.style.display = 'none';
+        // Load stats
+        fetch('dashboard_stats.json')
+            .then(r => r.json())
+            .then(data => { statsData = data; update(); })
+            .catch(e => console.error("Could not load stats data", e));
 
-            img.onerror = () => {
-                img.style.display = 'none';
-                emptyMsg.style.display = 'flex';
-                emptyMsg.innerHTML = `<p>Image non trouvée pour <b>${currentDataset}</b> à <b>${currentSparsity}%</b>.<br>Lancer: <code>python visualize_predictions.py --dataset ${currentDataset}</code></p>`;
-            };
+        function setTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-btn:not(.model-btn)').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+            
+            document.getElementById('view-title').innerText = tab === 'preds' ? "Predictions Analysis" : tab === 'curves' ? "Robustness Curves" : "Dynamic Performance Stats";
+            sliderBox.style.display = (tab === 'preds' || tab === 'perf') ? "flex" : "none";
+            modelBox.style.display = tab === 'preds' ? "flex" : "none";
+            
+            chartsContainer.style.display = tab === 'perf' ? 'grid' : 'none';
+            imgBox.style.display = tab === 'perf' ? 'none' : 'flex';
+            
+            update();
         }
 
-        slider.oninput = function() {
-            currentSparsity = this.value;
-            label.innerText = this.value;
-            updateImage();
-        };
+        function setModel(model) {
+            currentModel = model;
+            document.querySelectorAll('.model-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+            update();
+        }
 
+        function updateLabel() { evalLabel.innerText = evalSlider.value; update(); }
+
+        function update() {
+            const dataset = dsSelect.value;
+            const trainSp = trainSpSelect.value;
+            const trainMode = modeSelect.value;
+            const evalSp = parseInt(evalSlider.value);
+            const config = `${trainSp}_${trainMode}`;
+            
+            if (currentTab === 'perf') {
+                renderCharts(dataset, trainSp, trainMode, evalSp);
+                return;
+            }
+
+            let path = "";
+            if (currentTab === 'preds') {
+                path = `results/visualizations/${dataset}/${config}/${currentModel === 'all' ? 'compare_preds' : 'pred_'+currentModel}_sp${evalSp}_random.png`;
+            } else {
+                path = `results/comparison/${config}/robustness_compare_${dataset}_random.png`;
+            }
+
+            displayImg.src = path + "?t=" + new Date().getTime();
+            displayImg.style.display = 'block';
+            msgBox.style.display = 'none';
+        }
+
+        function renderCharts(dataset, trainSp, mode, evalSp) {
+            const key = `${dataset}_${trainSp}_${mode}`;
+            const configData = statsData[key];
+            if (!configData) return;
+
+            const models = Object.keys(configData.models);
+            const labels = models;
+            const colors = ['#38bdf8', '#818cf8', '#34d399', '#fbbf24', '#f87171', '#a78bfa'];
+
+            // Extract values
+            const times = models.map(m => configData.models[m].train_time || 0);
+            const flops = models.map(m => configData.models[m].flops || 0);
+            
+            // Extract metric at specific evalSp
+            const metrics = models.map(m => {
+                const rob = configData.models[m].robustness;
+                if (!rob) return 0;
+                const idx = rob.sparsity.indexOf(evalSp);
+                return idx !== -1 ? rob.metrics[idx] : 0;
+            });
+
+            const isClass = models.length > 0 && configData.models[models[0]].robustness?.is_classification;
+            document.getElementById('metric-title').innerText = isClass ? "Accuracy (%)" : "Loss (MSE)";
+
+            const chartConfigs = [
+                { id: 'chart-metric', label: isClass ? 'Accuracy' : 'Loss', data: metrics, color: isClass ? '#34d399' : '#f87171' },
+                { id: 'chart-time', label: 'Time (s)', data: times, color: '#38bdf8' },
+                { id: 'chart-flops', label: 'FLOPS/s', data: flops, color: '#fbbf24', log: true }
+            ];
+
+            chartConfigs.forEach(cfg => {
+                if (charts[cfg.id]) charts[cfg.id].destroy();
+                const ctx = document.getElementById(cfg.id).getContext('2d');
+                charts[cfg.id] = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{ label: cfg.label, data: cfg.data, backgroundColor: cfg.color, borderRadius: 8 }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: { beginAtZero: !cfg.log, type: cfg.log ? 'logarithmic' : 'linear', grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#94a3b8' } },
+                            x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                        },
+                        plugins: { legend: { display: false } }
+                    }
+                });
+            });
+        }
+
+        function handleError() {
+            displayImg.style.display = 'none';
+            msgBox.style.display = 'block';
+            msgBox.innerHTML = `<p style="color: #ef4444;">📊 Data not found</p>`;
+        }
+
+        update();
     </script>
 </body>
 </html>

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B200 | Adaptive Trade Resilience Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="results/monthly_adaptive_metrics.js"></script>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: rgba(22, 27, 34, 0.8);
+            --card-border: #30363d;
+            --text-main: #e6edf3;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --critical: #f43f5e;
+            --stable: #10b981;
+            --warning: #fbbf24;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 1500px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin: 0;
+            background: linear-gradient(90deg, #58a6ff, #bc8cff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border: 1px solid transparent;
+        }
+        .card {
+            background: var(--card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .card h3 {
+            margin: 0 0 20px 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .stat-item {
+            background: rgba(13, 17, 23, 0.6);
+            padding: 16px;
+            border-radius: 8px;
+            border: 1px solid #21262d;
+        }
+        .stat-label { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; }
+        .stat-val { font-size: 1.25rem; font-weight: 700; color: var(--accent); }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+        .drift-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+        }
+        .chart-wrap { position: relative; width: 100%; height: 350px; }
+        .chart-wrap.small { height: 220px; }
+        .chart-wrap.timeline { height: 400px; }
+
+        @media (max-width: 1100px) {
+            .main-grid { grid-template-columns: 1fr; }
+            .drift-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Adaptive Resilience Benchmark (B200 Cloud)</h1>
+            <div id="driftStatus" class="status-badge">System Initializing...</div>
+        </div>
+
+        <div class="stats-row" id="summaryCards"></div>
+
+        <div class="card">
+            <h3>Temporal Error (MAE) over Time</h3>
+            <div class="chart-wrap">
+                <canvas id="maeChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Forecast Accuracy (Price/Value Prediction vs Reality)</h3>
+            <div class="chart-wrap">
+                <canvas id="forecastChart"></canvas>
+            </div>
+        </div>
+
+        <div class="drift-grid">
+            <div class="card">
+                <h3>Distribution Drift (KS)</h3>
+                <div class="chart-wrap small">
+                    <canvas id="ksChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Jensen-Shannon Divergence</h3>
+                <div class="chart-wrap small">
+                    <canvas id="jsChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Population Stability Index (PSI)</h3>
+                <div class="chart-wrap small">
+                    <canvas id="psiChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Retraining Intensity Over Time (Sum of Architecture Updates)</h3>
+            <div class="chart-wrap small">
+                <canvas id="intensityChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Retraining Timeline by Model (Events per Architecture)</h3>
+            <div class="chart-wrap timeline">
+                <canvas id="timelineChart"></canvas>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="card">
+                <h3>Maintenance Cost (Total Retrains)</h3>
+                <div class="chart-wrap small">
+                    <canvas id="costChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Computational Time (Initial + Retrains)</h3>
+                <div class="chart-wrap small">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = {
+            'GAT': '#38bdf8',
+            'CfC': '#fbbf24',
+            'LTC': '#f43f5e',
+            'RNN': '#a855f7',
+            'LSTM': '#3b82f6',
+            'GRU': '#10b981',
+            'Actual': '#484f58'
+        };
+
+        if (typeof b200AdaptiveMetricsData !== 'undefined') {
+            const data = b200AdaptiveMetricsData;
+            const models = Object.keys(data.models);
+            const dates = data.dates;
+
+            // Update Status Badge
+            const statusEl = document.getElementById('driftStatus');
+            const lastPsi = data.drift_metrics.psi[data.drift_metrics.psi.length - 1];
+            if (lastPsi > 0.25) {
+                statusEl.innerText = "CRITICAL DRIFT DETECTED";
+                statusEl.style.borderColor = "var(--critical)";
+                statusEl.style.color = "var(--critical)";
+                statusEl.style.background = "rgba(244, 63, 94, 0.1)";
+            } else {
+                statusEl.innerText = "MARKET DISTRIBUTION STABLE";
+                statusEl.style.borderColor = "var(--stable)";
+                statusEl.style.color = "var(--stable)";
+                statusEl.style.background = "rgba(16, 185, 129, 0.1)";
+            }
+
+            // Summary Stats
+            const summaryDiv = document.getElementById('summaryCards');
+            summaryDiv.innerHTML = models.map(m => `
+                <div class="stat-item">
+                    <div class="stat-label">${m} Avg MAE</div>
+                    <div class="stat-val" style="color: ${colors[m]}">${Math.sqrt(data.models[m].avg_mse).toFixed(6)}</div>
+                    <div style="font-size: 0.65rem; color: var(--warning); margin-top: 4px; font-weight: 600;">Growth: ${data.models[m].avg_growth.toFixed(1)}%</div>
+                    <div style="font-size: 0.65rem; color: var(--text-dim); margin-top: 2px;">${data.models[m].retrain_events.length} Retrains</div>
+                </div>
+            `).join('');
+
+            const chartConfig = (yMax = null, isArea = false, useAnnotation = true) => {
+                const annotations = {};
+                if (useAnnotation && data.drift_metrics && data.drift_metrics.psi) {
+                    const driftIndex = data.drift_metrics.psi.findIndex(v => v > 0.25);
+                    if (driftIndex !== -1) {
+                        annotations.driftZone = {
+                            type: 'box',
+                            xMin: data.drift_metrics.labels[driftIndex],
+                            xMax: dates[dates.length - 1],
+                            backgroundColor: 'rgba(244, 63, 94, 0.05)',
+                            borderWidth: 0,
+                            label: {
+                                display: true,
+                                content: 'CRITICAL DRIFT',
+                                position: 'start',
+                                color: 'var(--critical)',
+                                font: { size: 10, weight: '700' },
+                                yAdjust: 10
+                            }
+                        };
+                    }
+                }
+
+                return {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            align: 'end',
+                            labels: { color: '#8b949e', font: { size: 10 }, usePointStyle: true, boxWidth: 6 }
+                        },
+                        tooltip: {
+                            backgroundColor: '#161b22',
+                            borderColor: '#30363d',
+                            borderWidth: 1,
+                            titleColor: '#58a6ff',
+                            bodyColor: '#e6edf3',
+                            padding: 12
+                        },
+                        annotation: { annotations }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { 
+                                color: '#484f58', 
+                                font: { size: 9 }, 
+                                maxRotation: 45, 
+                                autoSkip: true,
+                                callback: function(val, index) {
+                                    const label = this.getLabelForValue(val);
+                                    if (label && label.length === 6) {
+                                        return label.substring(0, 4) + '/' + label.substring(4);
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(48, 54, 61, 0.3)' },
+                            ticks: { color: '#484f58', font: { size: 9 } },
+                            max: yMax,
+                            beginAtZero: true
+                        }
+                    }
+                };
+            };
+
+            // 1. MAE Chart (Line)
+            new Chart(document.getElementById('maeChart'), {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: models.map(m => ({
+                        label: m,
+                        data: data.models[m].rolling_mae,
+                        borderColor: colors[m],
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.3
+                    }))
+                },
+                options: chartConfig()
+            });
+
+            // 2. Drift Charts (Small Areas)
+            const renderDrift = (ctxId, label, rawData, color) => {
+                new Chart(document.getElementById(ctxId), {
+                    type: 'line',
+                    data: {
+                        labels: data.drift_metrics.labels,
+                        datasets: [{
+                            label: label,
+                            data: rawData,
+                            borderColor: color,
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: true,
+                            backgroundColor: color + '11',
+                            tension: 0.2
+                        }]
+                    },
+                    options: chartConfig()
+                });
+            };
+
+            renderDrift('ksChart', 'KS', data.drift_metrics.ks, '#58a6ff');
+            renderDrift('jsChart', 'JS', data.drift_metrics.js, '#10b981');
+            renderDrift('psiChart', 'PSI', data.drift_metrics.psi, '#f43f5e');
+
+            // 3. Timeline (Scatter on Axis)
+            new Chart(document.getElementById('timelineChart'), {
+                type: 'scatter',
+                data: {
+                    datasets: models.map((m, idx) => ({
+                        label: m,
+                        data: data.models[m].retrain_events.map(date => ({ x: date, y: models.length - 1 - idx })),
+                        backgroundColor: colors[m],
+                        pointRadius: 10,
+                        pointHoverRadius: 12
+                    }))
+                },
+                options: {
+                    ...chartConfig(null, false, false),
+                    scales: {
+                        x: { type: 'category', labels: dates, grid: { color: '#161b22' }, ticks: { color: '#8b949e' } },
+                        y: {
+                            ticks: { color: '#e6edf3', callback: (v) => models[models.length - 1 - v] },
+                            grid: { color: '#30363d' },
+                            min: -0.5,
+                            max: models.length - 0.5
+                        }
+                    }
+                }
+            });
+
+            // 4. Forecast Chart
+            new Chart(document.getElementById('forecastChart'), {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [
+                        { label: 'Market Reality', data: data.actual_price_usd, borderColor: colors['Actual'], borderWidth: 2, borderDash: [5,5], pointRadius: 0 },
+                        ...models.map(m => ({
+                            label: m,
+                            data: data.models[m].predictions_usd,
+                            borderColor: colors[m],
+                            borderWidth: 1,
+                            pointRadius: 0
+                        }))
+                    ]
+                },
+                options: chartConfig(null, false, false)
+            });
+
+            // 4.5 Retraining Intensity (Aggregated Bars)
+            const intensityData = dates.map(date => {
+                let count = 0;
+                models.forEach(m => {
+                    if (data.models[m].retrain_events.includes(date)) count++;
+                });
+                return count;
+            });
+
+            new Chart(document.getElementById('intensityChart'), {
+                type: 'bar',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: 'Models Retrained',
+                        data: intensityData,
+                        backgroundColor: '#3b82f6aa',
+                        borderColor: '#3b82f6',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    ...chartConfig(null, false, false),
+                    plugins: { ...chartConfig().plugins, legend: { display: false } }
+                }
+            });
+
+            // 5. Maintenance Cost (Bar)
+            new Chart(document.getElementById('costChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        data: models.map(m => data.models[m].retrain_events.length),
+                        backgroundColor: models.map(m => colors[m] + '88'),
+                        borderColor: models.map(m => colors[m]),
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    ...chartConfig(null, false, false),
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: chartConfig().plugins.tooltip,
+                        annotation: { annotations: {} }
+                    }
+                }
+            });
+
+            // 6. Computational Time (Stacked Bar)
+            new Chart(document.getElementById('timeChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [
+                        {
+                            label: 'Initial Training',
+                            data: models.map(m => data.models[m].time_cost_seconds || 0),
+                            backgroundColor: models.map(m => colors[m] + '88'),
+                            borderColor: models.map(m => colors[m]),
+                            borderWidth: 1,
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Retraining Time',
+                            data: models.map(m => data.models[m].retrain_time_seconds || 0),
+                            backgroundColor: 'rgba(72, 79, 88, 0.4)',
+                            borderColor: '#484f58',
+                            borderWidth: 1,
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    ...chartConfig(null, false, false),
+                    plugins: {
+                        legend: { display: true, labels: { color: '#c9d1d9' } },
+                        annotation: { annotations: {} }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { display: false } },
+                        y: { stacked: true, grid: { color: 'rgba(48, 54, 61, 0.3)' } }
+                    }
+                }
+            });
+
+        } else {
+            document.body.innerHTML = "<div class='container' style='text-align:center; padding-top:100px;'><h2>Data script not found.</h2><p>Please check results/monthly_adaptive_metrics.js</p></div>";
+        }
+    </script>
+</body>
+</html>

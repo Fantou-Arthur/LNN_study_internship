@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Short-Term Oil Study (2017-2019) with Drift Analysis</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="results/oil_short_data.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --accent: #38bdf8;
+            --cfc: #fbbf24;
+            --ltc: #f43f5e;
+            --rnn: #a855f7;
+            --lstm: #3b82f6;
+            --gru: #10b981;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        .card {
+            background: #1e293b;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .stat-item {
+            text-align: center;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            background: #1a2234;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: transform 0.2s;
+        }
+        .stat-item:hover {
+            transform: translateY(-5px);
+            background: #242f44;
+        }
+        .stat-value {
+            display: block;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-top: 0.5rem;
+        }
+        .drift-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+        .status-badge {
+            padding: 10px 20px;
+            border-radius: 10px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        .cfc-t { color: var(--cfc); }
+        .ltc-t { color: var(--ltc); }
+        .rnn-t { color: var(--rnn); }
+        .lstm-t { color: var(--lstm); }
+        .gru-t { color: var(--gru); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Oil Price Study: 2017-2019 Training</h1>
+        <p>Short-term training with x(0) initialization for Liquid Networks</p>
+        <div id="driftStatus" class="status-badge">Calculating Drift...</div>
+    </div>
+
+    <div class="container">
+        <div class="stats-grid" id="modelSummaryCards">
+            <!-- Dynamic Cards -->
+        </div>
+
+        <div class="card">
+            <div class="controls">
+                <label for="sparsityRange">Missing Data (Sparsity): <span id="sparsityValue">0</span>%</label>
+                <input type="range" id="sparsityRange" min="0" max="80" step="10" value="0">
+            </div>
+            
+            <div style="height: 600px; position: relative; margin-top: 1rem;">
+                <canvas id="forecastChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Temporal Error (MAE) over Time</h3>
+            <div style="height: 350px;">
+                <canvas id="maeChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Temporal Error Growth Rate (%)</h3>
+            <div style="height: 300px;">
+                <canvas id="growthChart"></canvas>
+            </div>
+        </div>
+
+        <div class="drift-grid">
+            <div class="card">
+                <h3>Distribution Drift (Kolmogorov-Smirnov)</h3>
+                <div style="height: 300px;">
+                    <canvas id="ksChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Population Stability Index (PSI)</h3>
+                <div style="height: 300px;">
+                    <canvas id="psiChart"></canvas>
+                </div>
+            </div>
+            <div class="card" style="grid-column: span 2;">
+                <h3>Jensen-Shannon Divergence</h3>
+                <div style="height: 300px;">
+                    <canvas id="jsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Robustness Decay (MSE vs Sparsity)</h3>
+            <div style="height: 300px;">
+                <canvas id="robustnessChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = null;
+        let forecastChart = null;
+        let robustnessChart = null;
+        let maeChart = null;
+        let growthChart = null;
+        let driftCharts = {};
+
+        function getDriftPeriods() {
+            if (!rawData || !rawData.drift_metrics) return [];
+            const periods = [];
+            let current = null;
+            const threshold = 0.25;
+            rawData.drift_metrics.psi.forEach((v, i) => {
+                const date = rawData.drift_metrics.labels[i];
+                if (v > threshold) {
+                    if (!current) current = { start: date };
+                } else {
+                    if (current) { current.end = date; periods.push(current); current = null; }
+                }
+            });
+            if (current) { current.end = rawData.drift_metrics.labels[rawData.drift_metrics.labels.length-1]; periods.push(current); }
+            return periods;
+        }
+
+        function initCharts() {
+            if (!rawData) return;
+            console.log("Initializing charts with data:", rawData);
+            
+            const driftPeriods = getDriftPeriods();
+            const annotations = driftPeriods.map((p, i) => ({
+                type: 'box',
+                xMin: p.start,
+                xMax: p.end,
+                backgroundColor: 'rgba(244, 63, 94, 0.08)',
+                borderWidth: 0,
+                label: {
+                    display: i === 0,
+                    content: 'CRITICAL DRIFT',
+                    position: 'start',
+                    color: '#f43f5e',
+                    font: { size: 10, weight: 'bold' }
+                }
+            }));
+
+            // Forecast Chart
+            forecastChart = new Chart(document.getElementById('forecastChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: rawData.dates,
+                    datasets: [
+                        { label: 'Actual', data: rawData.actual_price_usd, borderColor: '#64748b', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'CfC', data: [], borderColor: '#fbbf24', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'LTC', data: [], borderColor: '#f43f5e', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'RNN', data: [], borderColor: '#a855f7', borderWidth: 2, pointRadius: 0, fill: false, borderDash: [5, 5] },
+                        { label: 'LSTM', data: [], borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'GRU', data: [], borderColor: '#10b981', borderWidth: 2, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { labels: { color: '#f8fafc' } },
+                        annotation: { annotations: annotations }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b', autoSkip: true, maxTicksLimit: 15 } },
+                        y: { title: { display: true, text: 'Price (USD)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // MAE Chart
+            maeChart = new Chart(document.getElementById('maeChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: rawData.dates,
+                    datasets: [
+                        { label: 'CfC', data: [], borderColor: '#fbbf24', borderWidth: 1.5, pointRadius: 0, fill: false },
+                        { label: 'LTC', data: [], borderColor: '#f43f5e', borderWidth: 1.5, pointRadius: 0, fill: false },
+                        { label: 'RNN', data: [], borderColor: '#a855f7', borderWidth: 1.5, pointRadius: 0, fill: false },
+                        { label: 'LSTM', data: [], borderColor: '#3b82f6', borderWidth: 1.5, pointRadius: 0, fill: false },
+                        { label: 'GRU', data: [], borderColor: '#10b981', borderWidth: 1.5, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { labels: { color: '#f8fafc' } },
+                        annotation: { annotations: annotations }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                        y: { title: { display: true, text: 'MAE (30d Rolling)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // Growth Chart
+            growthChart = new Chart(document.getElementById('growthChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: rawData.dates,
+                    datasets: [
+                        { label: 'CfC', data: [], borderColor: '#fbbf24', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'LTC', data: [], borderColor: '#f43f5e', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'RNN', data: [], borderColor: '#a855f7', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'LSTM', data: [], borderColor: '#3b82f6', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'GRU', data: [], borderColor: '#10b981', borderWidth: 1, pointRadius: 0, fill: false }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { labels: { color: '#f8fafc' } },
+                        annotation: { annotations: annotations }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b', maxTicksLimit: 12 } },
+                        y: { title: { display: true, text: 'Error Growth Rate (%)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // Robustness Chart
+            const sparsities = rawData.studies.map(s => s.sparsity);
+            robustnessChart = new Chart(document.getElementById('robustnessChart').getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: sparsities,
+                    datasets: [
+                        { label: 'CfC', data: rawData.studies.map(s => s.models.CfC.mse * 1000), borderColor: '#fbbf24' },
+                        { label: 'LTC', data: rawData.studies.map(s => s.models.LTC.mse * 1000), borderColor: '#f43f5e' },
+                        { label: 'RNN', data: rawData.studies.map(s => s.models.RNN.mse * 1000), borderColor: '#a855f7' },
+                        { label: 'LSTM', data: rawData.studies.map(s => s.models.LSTM.mse * 1000), borderColor: '#3b82f6' },
+                        { label: 'GRU', data: rawData.studies.map(s => s.models.GRU.mse * 1000), borderColor: '#10b981' }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#f8fafc' } } },
+                    scales: {
+                        x: { title: { display: true, text: 'Sparsity %', color: '#f8fafc' }, ticks: { color: '#64748b' } },
+                        y: { title: { display: true, text: 'MSE (x10⁻³)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // Drift Charts
+            renderDriftChart('ksChart', rawData.drift_metrics.ks, '#38bdf8', annotations);
+            renderDriftChart('psiChart', rawData.drift_metrics.psi, '#f43f5e', annotations);
+            renderDriftChart('jsChart', rawData.drift_metrics.js, '#10b981', annotations);
+            
+            updateDriftStatus();
+        }
+
+        function renderDriftChart(id, points, color, annotations) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            driftCharts[id] = new Chart(el.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: rawData.drift_metrics.labels,
+                    datasets: [{
+                        data: points, borderColor: color, borderWidth: 2, pointRadius: 0, fill: true, backgroundColor: color + '11'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false },
+                        annotation: { annotations: annotations }
+                    },
+                    scales: {
+                        x: { ticks: { color: '#64748b', maxTicksLimit: 8 } },
+                        y: { beginAtZero: true, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+        }
+
+        function updateCharts(sparsity) {
+            if (!forecastChart || !rawData) return;
+            const available = rawData.studies.map(s => s.sparsity);
+            const closest = available.reduce((prev, curr) => Math.abs(curr - sparsity) < Math.abs(prev - sparsity) ? curr : prev);
+            
+            const study = rawData.studies.find(s => s.sparsity == closest);
+            document.getElementById('sparsityValue').innerText = closest;
+            
+            const models = ['CfC', 'LTC', 'RNN', 'LSTM', 'GRU'];
+            models.forEach((m, idx) => {
+                if (forecastChart.data.datasets[idx+1]) forecastChart.data.datasets[idx+1].data = study.models[m].predictions_usd;
+                if (maeChart && maeChart.data.datasets[idx]) maeChart.data.datasets[idx].data = study.models[m].rolling_mae;
+                if (growthChart && growthChart.data.datasets[idx]) growthChart.data.datasets[idx].data = study.models[m].growth_rate;
+            });
+            forecastChart.update();
+            if (maeChart) maeChart.update();
+            if (growthChart) growthChart.update();
+
+            const cardsDiv = document.getElementById('modelSummaryCards');
+            if (cardsDiv) {
+                cardsDiv.innerHTML = models.map(m => `
+                    <div class="stat-item">
+                        <div style="font-size: 0.9rem; color: #94a3b8;">${m}</div>
+                        <div class="stat-value ${m.toLowerCase()}-t">${study.models[m].mse.toFixed(6)}</div>
+                        <div style="font-size: 0.8rem; margin-top: 4px;">Growth: ${study.models[m].growth_pct.toFixed(1)}%</div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateDriftStatus() {
+            const lastPsi = rawData.drift_metrics.psi[rawData.drift_metrics.psi.length - 1];
+            const statusEl = document.getElementById('driftStatus');
+            if (lastPsi > 0.25) {
+                statusEl.innerText = "CRITICAL DRIFT DETECTED";
+                statusEl.style.backgroundColor = "rgba(244,63,94,0.2)";
+                statusEl.style.color = "#f43f5e";
+            } else {
+                statusEl.innerText = "MARKET DISTRIBUTION STABLE";
+                statusEl.style.backgroundColor = "rgba(16,185,129,0.2)";
+                statusEl.style.color = "#10b981";
+            }
+        }
+
+        if (typeof oilShortData !== 'undefined') {
+            rawData = oilShortData;
+            initCharts();
+            updateCharts(0);
+            document.getElementById('sparsityRange').addEventListener('input', (e) => updateCharts(e.target.value));
+        } else {
+            document.body.innerHTML = "<h1 style='margin-top:100px;text-align:center;'>Data not found. Run run_oil_short_benchmark.py first.</h1>";
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+
+    <!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Resilience Analysis Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        body { background: #fcfcfc; color: #1a1a1a; font-family: 'Inter', sans-serif; padding: 40px; line-height: 1.6; }
+        .container { max-width: 1100px; margin: auto; }
+        header { border-bottom: 2px solid #eee; padding-bottom: 20px; margin-bottom: 30px; }
+        h1 { font-size: 1.8em; font-weight: 600; color: #111; margin-bottom: 5px; }
+        .subtitle { color: #666; font-size: 0.95em; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 25px; margin-bottom: 30px; }
+        .card { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        h3 { font-size: 1em; font-weight: 600; margin-top: 0; border-left: 4px solid #0056b3; padding-left: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+        th { background: #f8f9fa; font-weight: 600; color: #444; }
+        .metric-box { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .metric-val { font-weight: 600; color: #0056b3; }
+    </style></head><body>
+    <div class="container">
+        <header>
+            <h1>Comparative Resilience Analysis of Neural Architectures</h1>
+            <div class="subtitle">Investigation of GAT and CfC performance under structural trade drift (2020-2023)</div>
+        </header>
+        
+        <div class="grid">
+            <div class="card">
+                <h3>Statistical Drift Monitoring</h3>
+                <div id="drift-chart" style="height:300px;"></div>
+            </div>
+            <div class="card">
+                <h3>Predictive Accuracy Evolution (sMAPE)</h3>
+                <div id="error-chart" style="height:300px;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Quantitative Results Summary</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Observation Year</th>
+                        <th>KS Statistic</th>
+                        <th>PSI</th>
+                        <th>JS Divergence</th>
+                        <th>GAT sMAPE (%)</th>
+                        <th>CfC sMAPE (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const data = [{"year": 2020, "ks": 0.20322, "psi": 0.26734843488133253, "js": 0.18129638231189762, "gat_mse": 5.801544932068372, "cfc_mse": 4.337933055690078, "gat_smape": 36.924735038006894, "cfc_smape": 32.5281114265567}, {"year": 2021, "ks": 0.27326000000000006, "psi": 0.5739261577793112, "js": 0.1375987969540919, "gat_mse": 5.9647234753956875, "cfc_mse": 4.451771325535244, "gat_smape": 37.30391258663602, "cfc_smape": 33.08015463087294}, {"year": 2022, "ks": 0.12387000000000004, "psi": 0.10407053022611298, "js": 0.12007700103529391, "gat_mse": 6.030683753982423, "cfc_mse": 4.559615065181066, "gat_smape": 37.83107265593514, "cfc_smape": 33.5372652780442}, {"year": 2023, "ks": 0.20082, "psi": 0.33358920472185377, "js": 0.11663650570477167, "gat_mse": 5.949664290054985, "cfc_mse": 4.337963168517403, "gat_smape": 38.175037367447565, "cfc_smape": 33.44195193415103}];
+        const tbody = document.getElementById('table-body');
+        data.forEach(d => {
+            tbody.innerHTML += `<tr>
+                <td>${d.year}</td>
+                <td>${d.ks.toFixed(4)}</td>
+                <td>${d.psi.toFixed(4)}</td>
+                <td>${d.js.toFixed(4)}</td>
+                <td>${d.gat_smape.toFixed(2)}%</td>
+                <td>${d.cfc_smape.toFixed(2)}%</td>
+            </tr>`;
+        });
+
+        const driftChart = echarts.init(document.getElementById('drift-chart'));
+        driftChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['KS', 'PSI', 'JS'], bottom: 0 },
+            xAxis: { type: 'category', data: data.map(d => d.year) },
+            yAxis: { type: 'value' },
+            series: [
+                { name: 'KS', type: 'line', data: data.map(d => d.ks), smooth: true, color: '#0056b3' },
+                { name: 'PSI', type: 'line', data: data.map(d => d.psi), smooth: true, color: '#d9534f' },
+                { name: 'JS', type: 'line', data: data.map(d => d.js), smooth: true, color: '#5cb85c' }
+            ]
+        });
+
+        const errorChart = echarts.init(document.getElementById('error-chart'));
+        errorChart.setOption({
+            tooltip: { trigger: 'axis' },
+            legend: { data: ['GAT', 'CfC'], bottom: 0 },
+            xAxis: { type: 'category', data: data.map(d => d.year) },
+            yAxis: { type: 'value', min: 25 },
+            series: [
+                { name: 'GAT', type: 'bar', data: data.map(d => d.gat_smape), color: '#adc6ff' },
+                { name: 'CfC', type: 'bar', data: data.map(d => d.cfc_smape), color: '#0056b3' }
+            ]
+        });
+    </script></body></html>
+    

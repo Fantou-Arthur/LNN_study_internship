@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B200 Training: Liquid vs Spatial Benchmark</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <script src="results/b200_metrics.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --card: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --GAT: #60a5fa;
+            --CfC: #4ade80;
+            --LTC: #f43f5e;
+            --RNN: #a855f7;
+            --LSTM: #3b82f6;
+            --GRU: #10b981;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.2rem;
+            color: #f0f6fc;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+        .stat-card {
+            background: #090c10;
+            border: 1px solid var(--border);
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        .stat-card:hover { transform: translateY(-2px); }
+        .stat-title {
+            font-size: 0.8rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        .drift-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+        h3 {
+            margin-top: 0;
+            color: #f0f6fc;
+            font-size: 1.1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+        .large-chart { height: 450px; }
+        canvas { user-select: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Hardware Benchmark: 1x NVIDIA B200 (13GB Comtrade)</h1>
+            <p style="color: #8b949e;">Resilience Evaluation: All Architectures</p>
+        </div>
+
+        <h3>🎯 Average MSE (2020-2023)</h3>
+        <div class="stats-grid" id="kpiContainer">
+            <!-- KPIs injected via JS -->
+        </div>
+
+        <div class="card">
+            <h3>📈 Prediction Error Evolution (MSE)</h3>
+            <div class="chart-container large-chart">
+                <canvas id="mseChart"></canvas>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <h3>⏱️ Training Performance (Time Cost)</h3>
+                <div class="chart-container">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>⚠️ Error Growth Rate (%)</h3>
+                <div class="chart-container">
+                    <canvas id="growthChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="drift-grid">
+            <div class="card">
+                <h3>Kolmogorov-Smirnov (KS)</h3>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="ksChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Population Stability Index (PSI)</h3>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="psiChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Jensen-Shannon (JS)</h3>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="jsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = {
+            'GAT': '#60a5fa', 'CfC': '#4ade80', 'LTC': '#f43f5e',
+            'RNN': '#a855f7', 'LSTM': '#3b82f6', 'GRU': '#10b981'
+        };
+
+        if (typeof b200MetricsData !== 'undefined') {
+            const data = b200MetricsData;
+            const models = Object.keys(data.models);
+            
+            // 1. Populate KPIs
+            const kpiHtml = models.map(m => `
+                <div class="stat-card">
+                    <div class="stat-title">${m} MSE</div>
+                    <div class="stat-value" style="color: ${colors[m]};">${data.models[m].avg_mse.toFixed(4)}</div>
+                </div>
+            `).join('');
+            document.getElementById('kpiContainer').innerHTML = kpiHtml;
+
+            const commonOptions = {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: '#c9d1d9' } } },
+                scales: {
+                    x: { ticks: { color: '#8b949e', maxTicksLimit: 10 }, grid: { color: 'rgba(48,54,61,0.5)' } },
+                    y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(48,54,61,0.5)' } }
+                }
+            };
+
+            // 2. MSE Chart
+            new Chart(document.getElementById('mseChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: models.map(m => ({
+                        label: `${m} MSE`,
+                        data: data.models[m].rolling_mae.map(v => v*v),
+                        borderColor: colors[m],
+                        tension: 0.3, borderWidth: 2
+                    }))
+                },
+                options: commonOptions
+            });
+
+            // 3. Time Cost Bar Chart
+            new Chart(document.getElementById('timeChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        label: 'Training Time (Seconds)',
+                        data: models.map(m => data.models[m].time_cost_seconds),
+                        backgroundColor: models.map(m => colors[m]),
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { title: { display: true, text: 'Seconds', color: '#8b949e' }, ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
+                        x: { ticks: { color: '#c9d1d9', font: { size: 14 } }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // 4. Growth Chart (instead of retrains since retrains = 0)
+            new Chart(document.getElementById('growthChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        label: 'Avg Error Growth (%)',
+                        data: models.map(m => data.models[m].avg_growth),
+                        backgroundColor: models.map(m => colors[m] + 'aa'),
+                        borderColor: models.map(m => colors[m]),
+                        borderWidth: 1, borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } },
+                        x: { ticks: { color: '#c9d1d9' }, grid: { display: false } }
+                    }
+                }
+            });
+
+            // 5. Drift Charts
+            const renderDrift = (id, points, color, title) => {
+                new Chart(document.getElementById(id), {
+                    type: 'line',
+                    data: {
+                        labels: data.drift_metrics.labels,
+                        datasets: [{ data: points, borderColor: color, borderWidth: 2, fill: true, backgroundColor: color + '15', tension: 0.2 }]
+                    },
+                    options: {
+                        ...commonOptions,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { color: '#8b949e', maxTicksLimit: 5 }, grid: { color: '#30363d' } },
+                            y: { ticks: { color: '#8b949e' }, grid: { color: '#30363d' } }
+                        }
+                    }
+                });
+            };
+
+            renderDrift('ksChart', data.drift_metrics.ks, '#a855f7', 'KS');
+            renderDrift('psiChart', data.drift_metrics.psi, '#f43f5e', 'PSI');
+            renderDrift('jsChart', data.drift_metrics.js, '#fbbf24', 'JS');
+
+        } else {
+            document.body.innerHTML = "<h2 style='text-align:center; margin-top:100px; color:#f87171;'>Data not found. Please run run_b200_adaptive.py first.</h2>";
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liquid Networks: Oil Robustness Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="results/oil_sparsity_data.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+            --primary: #38bdf8;
+            --accent: #f472b6;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(to right, var(--primary), var(--accent));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .container {
+            max-width: 1200px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+        .card {
+            background: var(--card);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem;
+            background: rgba(56, 189, 248, 0.1);
+            border-radius: 0.5rem;
+        }
+        input[type="range"] {
+            width: 100%;
+            max-width: 600px;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 1rem;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            display: block;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>WTI Oil Price: Model Robustness vs. Data Sparsity</h1>
+        <p>Interactive Analysis of LTC, CfC, and CNN Architectures</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <div class="controls">
+                <label for="sparsityRange">Missing Data Percentage: <span id="sparsityValue">0</span>%</label>
+                <input type="range" id="sparsityRange" min="0" max="90" step="10" value="0">
+                <p style="font-size: 0.8rem; opacity: 0.7;">Slide to see how models handle increasing data gaps (0% = Full Data, 90% = Very Sparse Data)</p>
+            </div>
+            
+            <div style="height: 500px; position: relative;">
+                <canvas id="forecastChart"></canvas>
+            </div>
+
+            <div class="stats" id="modelStats">
+                <!-- Stat items will be injected here -->
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Global Robustness: MSE vs. Sparsity</h3>
+            <div style="height: 300px;">
+                <canvas id="robustnessChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let rawData = null;
+        let forecastChart = null;
+        let robustnessChart = null;
+
+        async function loadData() {
+            if (typeof oilData !== 'undefined') {
+                rawData = oilData;
+                initCharts();
+                updateCharts(0);
+            } else {
+                console.error("Data not found. Run run_oil_sparsity_study.py first.");
+                alert("Données non trouvées. Veuillez relancer run_oil_sparsity_study.py d'abord.");
+            }
+        }
+
+        function initCharts() {
+            // Forecast Chart
+            const ctx = document.getElementById('forecastChart').getContext('2d');
+            forecastChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: rawData.days,
+                    datasets: [
+                        { label: 'Actual Price', data: rawData.actual_price, borderColor: '#64748b', borderWidth: 1, pointRadius: 0, fill: false },
+                        { label: 'LTC Prediction', data: [], borderColor: '#38bdf8', borderWidth: 2, pointRadius: 0, fill: false },
+                        { label: 'CfC Prediction', data: [], borderColor: '#fbbf24', borderWidth: 2, pointRadius: 0, fill: false, borderDash: [5, 5] },
+                        { label: 'CNN Prediction', data: [], borderColor: '#4ade80', borderWidth: 2, pointRadius: 0, fill: false, borderDash: [2, 2] }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#f8fafc' } } },
+                    scales: {
+                        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', maxRotation: 0 } },
+                        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+
+            // Robustness Chart
+            const robCtx = document.getElementById('robustnessChart').getContext('2d');
+            const sparsities = rawData.studies.map(s => s.sparsity);
+            robustnessChart = new Chart(robCtx, {
+                type: 'line',
+                data: {
+                    labels: sparsities,
+                    datasets: [
+                        { label: 'LTC MSE', data: rawData.studies.map(s => s.models.LTC.mse), borderColor: '#38bdf8' },
+                        { label: 'CfC MSE', data: rawData.studies.map(s => s.models.CfC.mse), borderColor: '#fbbf24' },
+                        { label: 'CNN MSE', data: rawData.studies.map(s => s.models.CNN.mse), borderColor: '#4ade80' }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { labels: { color: '#f8fafc' } } },
+                    scales: {
+                        x: { title: { display: true, text: 'Missing Data %', color: '#f8fafc' }, ticks: { color: '#64748b' } },
+                        y: { title: { display: true, text: 'MSE (Lower is Better)', color: '#f8fafc' }, ticks: { color: '#64748b' } }
+                    }
+                }
+            });
+        }
+
+        function updateCharts(sparsity) {
+            const study = rawData.studies.find(s => s.sparsity == sparsity);
+            if (!study) return;
+
+            document.getElementById('sparsityValue').innerText = sparsity;
+            
+            // Update Forecast
+            forecastChart.data.datasets[1].data = study.models.LTC.predictions;
+            forecastChart.data.datasets[2].data = study.models.CfC.predictions;
+            forecastChart.data.datasets[3].data = study.models.CNN.predictions;
+            forecastChart.update('none'); // Update without animation for smoothness
+
+            // Update Stats
+            const statsDiv = document.getElementById('modelStats');
+            statsDiv.innerHTML = `
+                <div class="stat-item">LTC MSE <span class="stat-value">${study.models.LTC.mse.toFixed(4)}</span></div>
+                <div class="stat-item">CfC MSE <span class="stat-value">${study.models.CfC.mse.toFixed(4)}</span></div>
+                <div class="stat-item">CNN MSE <span class="stat-value">${study.models.CNN.mse.toFixed(4)}</span></div>
+            `;
+        }
+
+        document.getElementById('sparsityRange').addEventListener('input', (e) => {
+            updateCharts(e.target.value);
+        });
+
+        loadData();
+    </script>
+</body>
+</html>

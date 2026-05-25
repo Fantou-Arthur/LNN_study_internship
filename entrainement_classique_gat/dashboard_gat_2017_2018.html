@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAT Evaluation Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #e2e8f0;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --accent-primary: #38bdf8;
+            --accent-secondary: #818cf8;
+            --success: #34d399;
+            --danger: #f87171;
+            --warning: #fbbf24;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(129, 140, 248, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-color);
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 3rem;
+            animation: fadeInDown 0.8s ease-out;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        p.subtitle {
+            font-size: 1.1rem;
+            color: #94a3b8;
+        }
+
+        .dataset-section {
+            margin-bottom: 3rem;
+            animation: fadeIn 1s ease-out;
+        }
+
+        .dataset-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--card-border);
+            display: inline-block;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .card-header {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #f1f5f9;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .metric-label {
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            font-weight: 500;
+        }
+
+        .metric-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .value-good { color: var(--success); }
+        .value-bad { color: var(--danger); }
+        .value-neutral { color: var(--warning); }
+
+        .loading {
+            text-align: center;
+            font-size: 1.5rem;
+            color: var(--accent-primary);
+            padding: 5rem 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        .error {
+            text-align: center;
+            color: var(--danger);
+            background: rgba(248, 113, 113, 0.1);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            margin: 2rem auto;
+            max-width: 600px;
+        }
+
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.1);
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>GAT Out-of-Distribution Evaluation</h1>
+            <p class="subtitle">Temporal generalization analysis (Trained on 2017-2018)</p>
+        </header>
+
+        <div id="dashboard-content">
+            <div class="loading">Loading metrics...</div>
+        </div>
+        
+        <div id="charts-container" style="display: none; margin-top: 3rem;">
+            <h2 class="dataset-title" style="font-size: 1.8rem; margin-bottom: 2rem; color: #f1f5f9;">Visualisation des Performances (Par Tranche)</h2>
+            <div class="grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="card" style="padding: 1.5rem;">
+                    <canvas id="r2Chart"></canvas>
+                </div>
+                <div class="card" style="padding: 1.5rem;">
+                    <canvas id="smapeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch and render the JSON data
+        async function fetchMetrics() {
+            try {
+                // Fetch the JSON file generated by the python script
+                const response = await fetch('dashboard_stats_gat_2017_2018.json');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                renderDashboard(data);
+            } catch (error) {
+                console.error("Could not load metrics:", error);
+                document.getElementById('dashboard-content').innerHTML = `
+                    <div class="error">
+                        <h2>Error Loading Data</h2>
+                        <p>Could not fetch dashboard_stats_gat_2017_2018.json.</p>
+                        <p>Ensure that you have re-run the Python training script to generate the JSON file.</p>
+                        <p style="margin-top: 1.5rem; margin-bottom: 0.5rem; color: #cbd5e1; font-weight: 500;">Since you opened this file directly (file://), your browser blocked the automatic load for security reasons. Please select the JSON file manually:</p>
+                        <input type="file" id="json-upload" accept=".json" style="margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; color: white; cursor: pointer; border: 1px solid var(--accent-primary);">
+                        <p style="font-size: 0.8rem; margin-top: 1rem; opacity: 0.7;">Details: ${error.message}</p>
+                    </div>
+                `;
+
+                // Add event listener for the manual file upload fallback
+                setTimeout(() => {
+                    const input = document.getElementById('json-upload');
+                    if (input) {
+                        input.addEventListener('change', function(e) {
+                            const file = e.target.files[0];
+                            if (file) {
+                                const reader = new FileReader();
+                                reader.onload = function(e) {
+                                    try {
+                                        const data = JSON.parse(e.target.result);
+                                        renderDashboard(data);
+                                    } catch(err) {
+                                        alert("Erreur: Le fichier JSON est invalide ou corrompu.");
+                                    }
+                                };
+                                reader.readAsText(file);
+                            }
+                        });
+                    }
+                }, 100);
+            }
+        }
+
+        function formatNumber(num) {
+            if (num === null || num === undefined) return 'N/A';
+            return new Intl.NumberFormat('en-US').format(num);
+        }
+
+        function formatDecimal(num, decimals = 4) {
+            if (num === null || num === undefined) return 'N/A';
+            return parseFloat(num).toFixed(decimals);
+        }
+
+        function getR2Class(r2) {
+            if (r2 > 0.3) return 'value-good';
+            if (r2 >= 0) return 'value-neutral';
+            return 'value-bad';
+        }
+
+        function getSmapeClass(smape) {
+            if (smape < 80) return 'value-good';
+            if (smape < 150) return 'value-neutral';
+            return 'value-bad';
+        }
+
+        function formatThresholdName(key) {
+            const map = {
+                'all': 'All Flows',
+                'gte_1M': '≥ 1M USD',
+                'gte_10M': '≥ 10M USD',
+                'gte_100M': '≥ 100M USD'
+            };
+            return map[key] || key;
+        }
+
+        function renderDashboard(data) {
+            const container = document.getElementById('dashboard-content');
+            container.innerHTML = '';
+
+            for (const [datasetKey, thresholds] of Object.entries(data)) {
+                
+                // Extract clean display name
+                let displayName = datasetKey.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                if (datasetKey.includes('validation')) {
+                    displayName = 'Validation (2019-2022)';
+                } else if (datasetKey.includes('test')) {
+                    displayName = 'Test 2023';
+                }
+
+                const section = document.createElement('div');
+                section.className = 'dataset-section';
+                
+                section.innerHTML = `
+                    <h2 class="dataset-title">${displayName}</h2>
+                    <div class="grid" id="grid-${datasetKey}"></div>
+                `;
+                
+                container.appendChild(section);
+                
+                const grid = document.getElementById(`grid-${datasetKey}`);
+
+                // Define preferred display order
+                const order = ['all', 'gte_1M', 'gte_10M', 'gte_100M'];
+                const sortedKeys = Object.keys(thresholds).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+
+                for (const key of sortedKeys) {
+                    const metrics = thresholds[key];
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    
+                    card.innerHTML = `
+                        <div class="card-header">${formatThresholdName(key)} <span class="badge">n=${formatNumber(metrics.n)}</span></div>
+                        
+                        <div class="metric">
+                            <span class="metric-label">R² Score</span>
+                            <span class="metric-value ${getR2Class(metrics.r2)}">${formatDecimal(metrics.r2)}</span>
+                        </div>
+                        
+                        <div class="metric">
+                            <span class="metric-label">SMAPE</span>
+                            <span class="metric-value ${getSmapeClass(metrics.smape)}">${formatDecimal(metrics.smape, 2)}%</span>
+                        </div>
+                        
+                        <div class="metric">
+                            <span class="metric-label">MAE</span>
+                            <span class="metric-value" style="font-size: 0.95rem;">${formatNumber(metrics.mae ? Math.round(metrics.mae) : null)}</span>
+                        </div>
+                    `;
+                    
+                    grid.appendChild(card);
+                }
+            }
+
+            // Render Aesthetic Charts
+            document.getElementById('charts-container').style.display = 'block';
+            renderCharts(data);
+        }
+
+        let r2ChartInstance = null;
+        let smapeChartInstance = null;
+
+        function renderCharts(data) {
+            const labels = ['All Flows', '≥ 1M USD', '≥ 10M USD', '≥ 100M USD'];
+            const keys = ['all', 'gte_1M', 'gte_10M', 'gte_100M'];
+            
+            const valData = data['validation_2019_2022'] || {};
+            const testData = data['test_2023'] || {};
+
+            const r2Val = keys.map(k => valData[k] ? valData[k].r2 : null);
+            const r2Test = keys.map(k => testData[k] ? testData[k].r2 : null);
+
+            const smapeVal = keys.map(k => valData[k] ? valData[k].smape : null);
+            const smapeTest = keys.map(k => testData[k] ? testData[k].smape : null);
+
+            // Chart configuration aesthetics
+            Chart.defaults.color = '#cbd5e1';
+            Chart.defaults.font.family = "'Inter', sans-serif";
+            
+            const commonOptions = {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { usePointStyle: true, boxWidth: 8, font: { weight: '600' } } }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            };
+
+            if (r2ChartInstance) r2ChartInstance.destroy();
+            r2ChartInstance = new Chart(document.getElementById('r2Chart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Validation (2019-2022)',
+                            data: r2Val,
+                            borderColor: '#38bdf8', // Cyan
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.4, // Smooth curve
+                            pointBackgroundColor: '#0f172a',
+                            pointBorderColor: '#38bdf8',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            fill: true
+                        },
+                        {
+                            label: 'Test 2023',
+                            data: r2Test,
+                            borderColor: '#fbbf24', // Amber/Yellow
+                            backgroundColor: 'rgba(251, 191, 36, 0.05)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            pointBackgroundColor: '#0f172a',
+                            pointBorderColor: '#fbbf24',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: { ...commonOptions.plugins, title: { display: true, text: 'R² Score Evolution', font: { family: "'Outfit', sans-serif", size: 16 } } }
+                }
+            });
+
+            if (smapeChartInstance) smapeChartInstance.destroy();
+            smapeChartInstance = new Chart(document.getElementById('smapeChart'), {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Validation (2019-2022)',
+                            data: smapeVal,
+                            borderColor: '#818cf8', // Indigo
+                            backgroundColor: 'rgba(129, 140, 248, 0.1)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            pointBackgroundColor: '#0f172a',
+                            pointBorderColor: '#818cf8',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                            fill: true
+                        },
+                        {
+                            label: 'Test 2023',
+                            data: smapeTest,
+                            borderColor: '#f87171', // Red/Coral
+                            backgroundColor: 'rgba(248, 113, 113, 0.05)',
+                            borderWidth: 3,
+                            tension: 0.4,
+                            pointBackgroundColor: '#0f172a',
+                            pointBorderColor: '#f87171',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }
+                    ]
+                },
+                options: {
+                    ...commonOptions,
+                    plugins: { ...commonOptions.plugins, title: { display: true, text: 'SMAPE Error (%)', font: { family: "'Outfit', sans-serif", size: 16 } } }
+                }
+            });
+        }
+
+        // Initialize dashboard rendering
+        document.addEventListener('DOMContentLoaded', fetchMetrics);
+    </script>
+</body>
+</html>

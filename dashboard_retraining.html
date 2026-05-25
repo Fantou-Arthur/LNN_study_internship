@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>B200 Retraining Benchmark</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --text-color: #e2e8f0;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --accent-primary: #818cf8;
+            --accent-secondary: #c084fc;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(129, 140, 248, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(192, 132, 252, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            color: var(--text-color);
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.6;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; }
+
+        header { text-align: center; margin-bottom: 2rem; animation: fadeInDown 0.8s ease-out; }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 3rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-bottom: 3rem;
+            animation: fadeIn 1s ease-out;
+        }
+
+        select {
+            padding: 0.75rem 1.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            background: rgba(15, 23, 42, 0.8);
+            color: white;
+            border: 2px solid var(--accent-primary);
+            border-radius: 8px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            animation: fadeIn 1s ease-out;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(12px);
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .loading { text-align: center; font-size: 1.5rem; color: var(--accent-primary); padding: 5rem 0; font-family: 'Outfit', sans-serif; }
+        .error { text-align: center; color: #f87171; background: rgba(248, 113, 113, 0.1); padding: 2rem; border-radius: 12px; border: 1px solid rgba(248, 113, 113, 0.3); margin: 2rem auto; max-width: 600px; }
+
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Adaptive Retraining Benchmark</h1>
+            <p style="color: #94a3b8; font-size: 1.1rem;">Year-over-year temporal evaluation with concept drift detection</p>
+        </header>
+
+        <div id="dashboard-content">
+            <div class="loading">Loading metrics...</div>
+        </div>
+    </div>
+
+    <script>
+        let globalData = null;
+        let r2ChartInstance = null;
+        let smapeChartInstance = null;
+        let forecastChartInstance = null;
+
+        async function fetchMetrics() {
+            const container = document.getElementById('dashboard-content');
+            try {
+                // Fetch JSON from the rsquare/results folder
+                const response = await fetch('rsquare/results/b200_retraining_metrics_detailed.json');
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                globalData = await response.json();
+                buildUI();
+            } catch (error) {
+                console.error(error);
+                container.innerHTML = `
+                    <div class="error">
+                        <h2>File Not Found (CORS Restriction or Missing File)</h2>
+                        <p style="margin-bottom: 1rem;">Unable to automatically load <b>rsquare/results/b200_retraining_metrics_detailed.json</b>.</p>
+                        <p style="margin-bottom: 0.5rem; color: #cbd5e1;">If you are opening this file locally, please select the generated JSON file manually:</p>
+                        <input type="file" id="json-upload" accept=".json" style="padding: 10px; background: rgba(255,255,255,0.1); border-radius: 8px; color: white; cursor: pointer;">
+                        <p style="font-size: 0.8rem; margin-top: 1rem; opacity: 0.7;">Details: ${error.message}</p>
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    const input = document.getElementById('json-upload');
+                    if (input) {
+                        input.addEventListener('change', function(e) {
+                            const file = e.target.files[0];
+                            if (file) {
+                                const reader = new FileReader();
+                                reader.onload = function(e) {
+                                    try {
+                                        globalData = JSON.parse(e.target.result);
+                                        buildUI();
+                                    } catch(err) {
+                                        alert("Invalid JSON file.");
+                                    }
+                                };
+                                reader.readAsText(file);
+                            }
+                        });
+                    }
+                }, 100);
+            }
+        }
+
+        function buildUI() {
+            const container = document.getElementById('dashboard-content');
+            
+            const tranches = [
+                { key: 'all', label: 'All Flows' },
+                { key: 'gte_1M', label: 'Flows ≥ 1M USD' },
+                { key: 'gte_10M', label: 'Flows ≥ 10M USD' },
+                { key: 'gte_100M', label: 'Flows ≥ 100M USD' }
+            ];
+            
+            let optionsHTML = tranches.map(t => `<option value="${t.key}">${t.label}</option>`).join('');
+
+            container.innerHTML = `
+                <div class="controls">
+                    <select id="tranche-select">
+                        ${optionsHTML}
+                    </select>
+                </div>
+                <div class="card" style="margin-bottom: 2rem;">
+                    <canvas id="forecastChart" style="max-height: 400px;"></canvas>
+                </div>
+                <div class="grid">
+                    <div class="card">
+                        <canvas id="r2Chart"></canvas>
+                    </div>
+                    <div class="card">
+                        <canvas id="smapeChart"></canvas>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('tranche-select').addEventListener('change', (e) => {
+                renderCharts(e.target.value);
+            });
+
+            // Render first tranche by default
+            renderCharts('all');
+        }
+
+        function renderCharts(selectedTranche) {
+            const dates = globalData.dates;
+            const models = Object.keys(globalData.models);
+
+            const modelColors = {
+                'GAT': '#818cf8',     // Indigo
+                'CfC': '#34d399',     // Emerald
+                'LTC': '#fbbf24',     // Amber
+                'RNN': '#f87171',     // Red
+                'LSTM': '#c084fc',    // Purple
+                'GRU': '#38bdf8'      // Cyan
+            };
+            
+            const trancheLabels = {
+                'all': 'All Flows',
+                'gte_1M': '≥ 1M USD',
+                'gte_10M': '≥ 10M USD',
+                'gte_100M': '≥ 100M USD'
+            };
+
+            Chart.defaults.color = '#cbd5e1';
+            Chart.defaults.font.family = "'Inter', sans-serif";
+
+            const commonOptions = {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { usePointStyle: true, boxWidth: 8, font: { weight: '600' } } }
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { grid: { color: 'rgba(255,255,255,0.05)' } }
+                }
+            };
+
+            // R2 Chart
+            const r2Datasets = models.map(m => ({
+                label: m,
+                data: globalData.models[m].tranche_metrics[selectedTranche].r2,
+                borderColor: modelColors[m] || '#94a3b8',
+                backgroundColor: 'transparent',
+                borderWidth: 3,
+                tension: 0,
+                pointBackgroundColor: '#0f172a',
+                pointBorderColor: modelColors[m] || '#94a3b8',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }));
+
+            if (r2ChartInstance) r2ChartInstance.destroy();
+            r2ChartInstance = new Chart(document.getElementById('r2Chart'), {
+                type: 'line',
+                data: { labels: dates, datasets: r2Datasets },
+                options: {
+                    ...commonOptions,
+                    plugins: { ...commonOptions.plugins, title: { display: true, text: `R² Temporal Evolution (${trancheLabels[selectedTranche]})`, font: { family: "'Outfit', sans-serif", size: 18 } } }
+                }
+            });
+
+            // SMAPE Chart
+            const smapeDatasets = models.map(m => ({
+                label: m,
+                data: globalData.models[m].tranche_metrics[selectedTranche].smape,
+                borderColor: modelColors[m] || '#94a3b8',
+                backgroundColor: 'transparent',
+                borderWidth: 3,
+                tension: 0,
+                pointBackgroundColor: '#0f172a',
+                pointBorderColor: modelColors[m] || '#94a3b8',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }));
+
+            if (smapeChartInstance) smapeChartInstance.destroy();
+            smapeChartInstance = new Chart(document.getElementById('smapeChart'), {
+                type: 'line',
+                data: { labels: dates, datasets: smapeDatasets },
+                options: {
+                    ...commonOptions,
+                    plugins: { ...commonOptions.plugins, title: { display: true, text: `SMAPE Temporal Evolution (%) (${trancheLabels[selectedTranche]})`, font: { family: "'Outfit', sans-serif", size: 18 } } }
+                }
+            });
+
+            // Forecast Accuracy Chart (Full width)
+            if (globalData.actual_price_usd) {
+                const realityDataset = {
+                    label: 'Market Reality',
+                    data: globalData.actual_price_usd,
+                    borderColor: '#94a3b8',
+                    borderDash: [5, 5],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0,
+                    pointRadius: 0,
+                    hitRadius: 10
+                };
+
+                const forecastDatasets = models.map(m => ({
+                    label: m,
+                    data: globalData.models[m].predictions_usd,
+                    borderColor: modelColors[m] || '#94a3b8',
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0,
+                    pointBackgroundColor: '#0f172a',
+                    pointBorderColor: modelColors[m] || '#94a3b8',
+                    pointBorderWidth: 2,
+                    pointRadius: 3,
+                    pointHoverRadius: 5
+                }));
+
+                if (forecastChartInstance) forecastChartInstance.destroy();
+                forecastChartInstance = new Chart(document.getElementById('forecastChart'), {
+                    type: 'line',
+                    data: { labels: dates, datasets: [realityDataset, ...forecastDatasets] },
+                    options: {
+                        ...commonOptions,
+                        plugins: { 
+                            ...commonOptions.plugins, 
+                            title: { display: true, text: 'Forecast Accuracy (Price/Value Prediction vs Reality in USD)', font: { family: "'Outfit', sans-serif", size: 18 }, align: 'start' } 
+                        }
+                    }
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchMetrics);
+    </script>
+</body>
+</html>

@@ -18,7 +18,7 @@ from LSTM import ModernLSTMModel
 from GRU import ModernGRUModel
 from CNN import ModernCNNModel
 
-# Couleurs pour le terminal
+# Terminal colors
 C_GREEN = "\033[92m"
 C_YELLOW = "\033[93m"
 C_BLUE = "\033[94m"
@@ -77,92 +77,94 @@ def evaluate_robustness(model, x_test, y_test, criterion, is_classification, spa
             loss = criterion(output, y_test)
             return loss.item() # MSE
 
-def find_latest_files(model_name, dataset_name):
-    base_path = os.path.join("results", model_name, dataset_name)
-    if not os.path.exists(base_path):
-        return None, None
+def find_latest_files(model_name, dataset_name, sparsity_train=None, sparsity_mode=None):
+    if sparsity_train is not None and sparsity_mode is not None:
+        subfolder = f"{int(sparsity_train * 100)}_{sparsity_mode}"
+        base_path = os.path.join("results", model_name, dataset_name, subfolder)
+    else:
+        base_path = os.path.join("results", model_name, dataset_name)
+        
+    if not os.path.exists(base_path): return None, None
     
-    weight_files = glob.glob(os.path.join(base_path, "**", "weights_*.pt"), recursive=True)
-    data_files = glob.glob(os.path.join(base_path, "**", "eval_data_*.pt"), recursive=True)
+    pattern = "**" if sparsity_train is None else ""
+    weight_files = glob.glob(os.path.join(base_path, pattern, "weights_*.pt"), recursive=True)
+    data_files = glob.glob(os.path.join(base_path, pattern, "eval_data_*.pt"), recursive=True)
     
     if not weight_files or not data_files:
         return None, None
     
-    # Trouver le plus récent (basé sur le temps de modif)
     latest_weights = max(weight_files, key=os.path.getmtime)
-    
-    # Le eval_data correspondant est dans le même dossier
     dir_of_weights = os.path.dirname(latest_weights)
     config_str = os.path.basename(latest_weights).replace("weights_", "")
     matching_data = os.path.join(dir_of_weights, "eval_data_" + config_str)
     
-    if os.path.exists(matching_data):
-        return latest_weights, matching_data
-    else:
-        # Fallback sur le plus récent du même dossier ou globalement
-        return latest_weights, max(data_files, key=os.path.getmtime)
+    if os.path.exists(matching_data): return latest_weights, matching_data
+    return latest_weights, max(data_files, key=os.path.getmtime)
 
 def main():
-    parser = argparse.ArgumentParser(description="Comparaison de la Robustesse entre Modèles")
-    parser.add_argument("--datasets", nargs="+", default=DATASETS, help="Liste des datasets à tester")
-    parser.add_argument("--models", nargs="+", default=list(MODELS.keys()), help="Liste des modèles à comparer")
-    parser.add_argument("--sparsity_mode", type=str, default="random", choices=["random", "periodic"])
+    parser = argparse.ArgumentParser(description="Robustness Comparison between Models")
+    parser.add_argument("--datasets", nargs="+", default=DATASETS, help="List of datasets to test")
+    parser.add_argument("--models", nargs="+", default=list(MODELS.keys()), help="List of models to compare")
+    parser.add_argument("--sparsity_mode", type=str, default="random", choices=["random", "periodic"], help="Evaluation sparsity mode")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Training config arguments
+    parser.add_argument("--sparsity_train", type=float, default=None, help="Training sparsity (0.0-1.0)")
+    parser.add_argument("--train_mode", type=str, default=None, help="Training sparsity mode (random/periodic)")
+    
     args = parser.parse_args()
 
     device = torch.device(args.device)
     sparsity_levels = np.arange(0.0, 0.96, 0.01) # 0%, 1%, ..., 95%
     
-    output_dir = os.path.join("results", "comparison")
+    # Structured output directory
+    if args.sparsity_train is not None and args.train_mode is not None:
+        training_config_folder = f"{int(args.sparsity_train * 100)}_{args.train_mode}"
+        output_dir = os.path.join("results", "comparison", training_config_folder)
+    else:
+        output_dir = os.path.join("results", "comparison", "latest")
+        
     os.makedirs(output_dir, exist_ok=True)
 
     results_all = {}
 
     for dataset in args.datasets:
-        print(f"\n{C_BOLD}{C_BLUE}--- ANALYSE DU DATASET : {dataset.upper()} ---{C_END}")
+        print(f"\n{C_BOLD}{C_BLUE}--- DATASET ANALYSIS: {dataset.upper()} ---{C_END}")
         results_all[dataset] = {}
         
         for model_name in args.models:
-            weights_path, data_path = find_latest_files(model_name, dataset)
+            weights_path, data_path = find_latest_files(model_name, dataset, args.sparsity_train, args.train_mode)
             
             if not weights_path:
-                print(f"  {C_RED}[SKIP]{C_END} Modèle {model_name} non trouvé pour {dataset}")
+                print(f"  {C_RED}[SKIP]{C_END} Model {model_name} not found for {dataset}")
                 continue
                 
-            print(f"  {C_YELLOW}[TEST]{C_END} Modèle {model_name}...")
+            print(f"  {C_YELLOW}[TEST]{C_END} Model {model_name} from {C_BOLD}{os.path.basename(os.path.dirname(weights_path))}{C_END}...")
             
             try:
-                # Charger les données
-                data_bundle = torch.load(data_path, map_location="cpu") # Charger sur CPU d'abord
+                # Load data
+                data_bundle = torch.load(data_path, map_location="cpu")
                 x_test = data_bundle["x_test"]
                 y_test = data_bundle["y_test"]
                 input_size = data_bundle["input_size"]
                 output_size = data_bundle["output_size"]
                 is_classification = data_bundle["is_classification"]
                 
-                # Charger le modèle (extraire config du nom de fichier si possible)
+                # Extract config from filename
                 fname = os.path.basename(weights_path)
                 parts = fname.split("_")
-                units = 32
-                layers = 1
+                units, layers = 32, 1
                 for p in parts:
-                    if p.endswith("u") and p[:-1].isdigit(): 
-                        units = int(p[:-1])
-                    if p.endswith("L") and p[:-1].isdigit(): 
-                        layers = int(p[:-1])
+                    if p.endswith("u") and p[:-1].isdigit(): units = int(p[:-1])
+                    if p.endswith("L") and p[:-1].isdigit(): layers = int(p[:-1])
 
                 if model_name == "cnn":
                     model = MODELS[model_name](input_size, units, output_size, layers, "relu").to(device)
                 else:
                     model = MODELS[model_name](input_size, units, output_size, layers).to(device)
                 
-                state_dict = torch.load(weights_path, map_location=device)
-                model.load_state_dict(state_dict)
+                model.load_state_dict(torch.load(weights_path, map_location=device))
                 criterion = nn.CrossEntropyLoss() if is_classification else nn.MSELoss()
-                
-                # Déplacer les données sur le bon device
-                x_test = x_test.to(device)
-                y_test = y_test.to(device)
                 
                 model_results = []
                 for sp in sparsity_levels:
@@ -176,9 +178,9 @@ def main():
                 }
                 
             except Exception as e:
-                print(f"    {C_RED}Erreur lors du test de {model_name} : {e}{C_END}")
+                print(f"    {C_RED}Error testing {model_name}: {e}{C_END}")
 
-        # Tracer le graphique pour ce dataset
+        # Plot for this dataset
         if results_all[dataset]:
             plt.figure(figsize=(10, 6))
             is_classif = any(r["is_classification"] for r in results_all[dataset].values())
@@ -187,8 +189,8 @@ def main():
             for m_name, m_res in results_all[dataset].items():
                 plt.plot(np.array(m_res["sparsity"]) * 100, m_res["metrics"], label=m_name.upper(), marker='o', markersize=4)
             
-            plt.title(f"Robustesse sur {dataset.upper()} (Mode: {args.sparsity_mode})")
-            plt.xlabel("Sparsité (%)")
+            plt.title(f"Robustness on {dataset.upper()} (Eval Mode: {args.sparsity_mode})\n(Trained with {args.sparsity_train*100 if args.sparsity_train is not None else 'Unknown'}% {args.train_mode if args.train_mode else ''})")
+            plt.xlabel("Evaluation Sparsity (%)")
             plt.ylabel(metric_name)
             plt.grid(True, alpha=0.3)
             plt.legend()
@@ -196,9 +198,9 @@ def main():
             save_path = os.path.join(output_dir, f"robustness_compare_{dataset}_{args.sparsity_mode}.png")
             plt.savefig(save_path)
             plt.close()
-            print(f"  {C_GREEN}[OK]{C_END} Graphique comparatif sauvegardé : {save_path}")
+            print(f"  {C_GREEN}[OK]{C_END} Comparative chart saved: {save_path}")
 
-    # Sauvegarder les résultats numériques
+    # Save numerical results
     with open(os.path.join(output_dir, f"results_robustness_{args.sparsity_mode}.json"), "w") as f:
         json.dump(results_all, f, indent=4)
 

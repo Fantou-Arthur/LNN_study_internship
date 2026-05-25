@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full-Graph GAT vs Liquid Networks (B200)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <!-- Chargement des données générées par le script Python -->
+    <script src="full_adaptive_metrics.js"></script>
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --card: #161b22;
+            --text: #c9d1d9;
+            --accent: #58a6ff;
+            --gat: #0ea5e9;
+            --cfc: #fbbf24;
+            --ltc: #f43f5e;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #161b22 0%, #0b0f19 100%);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+        }
+        h1 {
+            color: var(--accent);
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: #8b949e;
+            margin-top: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        }
+        .card h3 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            color: #f0f6fc;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 16px;
+            border-radius: 8px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .chart-container {
+            height: 400px;
+            position: relative;
+        }
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Blackwell B200: Full-Graph Trade Resilience</h1>
+            <p class="subtitle">Adaptive GAT vs Liquid Neural Networks (CfC/LTC) Benchmark</p>
+        </div>
+        
+        <div class="stats-grid" id="summaryCards">
+            <!-- Injecté dynamiquement -->
+        </div>
+
+        <div class="grid">
+            <!-- Graphique Principal -->
+            <div class="card" style="grid-column: span 2;">
+                <h3>Trade Value Forecast vs Reality <span class="status-badge" style="background: rgba(88, 166, 255, 0.1); color: var(--accent);">B200 Accelerated</span></h3>
+                <div class="chart-container">
+                    <canvas id="forecastChart"></canvas>
+                </div>
+            </div>
+
+            <!-- MAE & Drift -->
+            <div class="card">
+                <h3>Error Degradation (Rolling MAE)</h3>
+                <div class="chart-container">
+                    <canvas id="maeChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Structural Data Drift (PSI / JS)</h3>
+                <div class="chart-container">
+                    <canvas id="driftChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Performance Temps & Événements -->
+            <div class="card">
+                <h3>Computational Cost (Training + Retrains)</h3>
+                <div class="chart-container">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Model Resilience (Retraining Frequency)</h3>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="retrainChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const colors = {
+            'GAT': '#0ea5e9',
+            'CfC': '#fbbf24',
+            'LTC': '#f43f5e',
+            'RNN': '#a855f7',
+            'LSTM': '#3b82f6',
+            'GRU': '#10b981'
+        };
+
+        if (typeof b200AdaptiveMetricsData !== 'undefined') {
+            const data = b200AdaptiveMetricsData;
+            const models = Object.keys(data.models);
+
+            // 1. Stats Summary
+            const summaryDiv = document.getElementById('summaryCards');
+            summaryDiv.innerHTML = models.map(m => `
+                <div class="stat-card">
+                    <div class="stat-label">${m}</div>
+                    <div class="stat-value" style="color: ${colors[m]}">${data.models[m].avg_mse.toFixed(5)}</div>
+                    <div style="font-size: 0.7rem; color: #8b949e; margin-top: 8px;">
+                        Retrains: ${data.models[m].retrain_events.length}
+                    </div>
+                </div>
+            `).join('');
+
+            const commonOptions = {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#c9d1d9', font: { family: 'Inter' } } }
+                },
+                scales: {
+                    x: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(48, 54, 61, 0.2)' } },
+                    y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(48, 54, 61, 0.5)' } }
+                }
+            };
+
+            // 2. Forecast Chart
+            new Chart(document.getElementById('forecastChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: [
+                        { label: 'Real Trade Value', data: data.actual_price_usd, borderColor: '#8b949e', borderWidth: 3, pointRadius: 4, borderDash: [5, 5] },
+                        ...models.map(m => ({
+                            label: m,
+                            data: data.models[m].predictions_usd,
+                            borderColor: colors[m],
+                            borderWidth: 2,
+                            pointRadius: 2
+                        }))
+                    ]
+                },
+                options: commonOptions
+            });
+
+            // 3. MAE Chart
+            new Chart(document.getElementById('maeChart'), {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: models.map(m => ({
+                        label: m,
+                        data: data.models[m].rolling_mae,
+                        borderColor: colors[m],
+                        tension: 0.4
+                    }))
+                },
+                options: commonOptions
+            });
+
+            // 4. Drift Chart
+            new Chart(document.getElementById('driftChart'), {
+                type: 'line',
+                data: {
+                    labels: data.drift_metrics.labels,
+                    datasets: [
+                        { label: 'PSI (Stability)', data: data.drift_metrics.psi, borderColor: '#f43f5e', fill: true, backgroundColor: 'rgba(244, 63, 94, 0.1)' },
+                        { label: 'JS (Divergence)', data: data.drift_metrics.js, borderColor: '#fbbf24' }
+                    ]
+                },
+                options: commonOptions
+            });
+
+            // 5. Time Chart
+            new Chart(document.getElementById('timeChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [
+                        { label: 'Initial (s)', data: models.map(m => data.models[m].time_cost_seconds), backgroundColor: models.map(m => colors[m]) },
+                        { label: 'Retrains (s)', data: models.map(m => data.models[m].retrain_time_seconds), backgroundColor: '#30363d' }
+                    ]
+                },
+                options: { ...commonOptions, scales: { x: { stacked: true }, y: { stacked: true } } }
+            });
+
+            // 6. Retrain Events
+            new Chart(document.getElementById('retrainChart'), {
+                type: 'bar',
+                data: {
+                    labels: models,
+                    datasets: [{
+                        label: 'Drift Triggers',
+                        data: models.map(m => data.models[m].retrain_events.length),
+                        backgroundColor: models.map(m => colors[m] + '88'),
+                        borderColor: models.map(m => colors[m]),
+                        borderWidth: 2
+                    }]
+                },
+                options: commonOptions
+            });
+
+        } else {
+            document.body.innerHTML = "<div class='container'><h1 style='text-align:center; margin-top: 100px;'>Waiting for b200_adaptive_metrics.js...</h1></div>";
+        }
+    </script>
+</body>
+</html>

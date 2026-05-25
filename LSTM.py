@@ -13,7 +13,7 @@ import argparse
 import sys
 from torch.utils.data import DataLoader, TensorDataset
 
-# --- COULEURS ANSI ---
+# --- ANSI COLORS ---
 C_BLUE = "\033[94m"
 C_GREEN = "\033[92m"
 C_YELLOW = "\033[93m"
@@ -28,7 +28,7 @@ except ImportError:
     SKLEARN_AVAILABLE = False
 
 def apply_sparsity(x, percentage, mode='random'):
-    """ Applique Option B : Masquage par valeur individuelle (cellule) """
+    """ Applies Option B: Individual cell masking (cell) """
     if percentage <= 0: return x
     if mode == 'random':
         mask = torch.rand(x.shape) > percentage
@@ -44,12 +44,23 @@ def apply_sparsity(x, percentage, mode='random'):
     return x
 
 def generate_sine_data(seq_len=64, num_samples=1000):
+    """
+    Generates synthetic sine wave data with variations in:
+    - Phase shift (0 to 2*pi)
+    - Amplitude (0.5 to 1.5)
+    - Frequency (0.8 to 1.2)
+    - Vertical Offset (-0.5 to 0.5)
+    """
     times = np.linspace(0, 10 * np.pi, seq_len)
     def create_split(n):
         data = []
         for _ in range(n):
             phase = np.random.uniform(0, 2 * np.pi)
-            data.append(np.sin(times + phase))
+            amplitude = np.random.uniform(0.5, 1.5)
+            frequency = np.random.uniform(0.8, 1.2)
+            offset = np.random.uniform(-0.5, 0.5)
+            # Apply formula: A * sin(f * t + phi) + offset
+            data.append(amplitude * np.sin(frequency * times + phase) + offset)
         data = np.array(data, dtype=np.float32)
         x = data[:, :-1, np.newaxis]
         y = data[:, 1:, np.newaxis]
@@ -60,7 +71,7 @@ def generate_sine_data(seq_len=64, num_samples=1000):
 
 def load_har_data(seq_len=16):
     base_path = "data/har/UCI HAR Dataset"
-    if not os.path.exists(base_path): raise FileNotFoundError(f"Dataset HAR non trouvé.")
+    if not os.path.exists(base_path): raise FileNotFoundError(f"HAR Dataset not found.")
     def load_split(split):
         x = np.loadtxt(os.path.join(base_path, f"{split}/X_{split}.txt"))
         y = (np.loadtxt(os.path.join(base_path, f"{split}/y_{split}.txt")) - 1).astype(np.int64)
@@ -117,7 +128,7 @@ def load_physionet_data(seq_len=32, num_files=500):
     files = [f for f in os.listdir(base_path) if f.endswith(".txt")][:num_files]
     params_to_keep, target_param = ['Age', 'Gender', 'GCS', 'Temp'], 'HR'
     all_x, all_y = [], []
-    print(f"{C_YELLOW}[>] Chargement de {len(files)} dossiers PhysioNet...{C_END}")
+    print(f"{C_YELLOW}[>] Loading {len(files)} PhysioNet folders...{C_END}")
     for f in files:
         df = pd.read_csv(os.path.join(base_path, f))
         df['minutes'] = df['Time'].apply(lambda x: int(x.split(':')[0])*60 + int(x.split(':')[1]) if isinstance(x, str) else 0)
@@ -179,10 +190,10 @@ def get_input(prompt, default):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LSTM Modern Demo with Sparsity & Persistence")
-    parser.add_argument("--units", type=int, help="Nombre de neurones")
-    parser.add_argument("--layers", type=int, default=1, help="Nombre de couches")
-    parser.add_argument("--epochs", type=int, help="Nombre d'époques")
-    parser.add_argument("--batch_size", type=int, help="Taille du batch")
+    parser.add_argument("--units", type=int, help="Number of units")
+    parser.add_argument("--layers", type=int, default=1, help="Number of layers")
+    parser.add_argument("--epochs", type=int, help="Number of epochs")
+    parser.add_argument("--batch_size", type=int, help="Batch size")
     parser.add_argument("--device", type=str)
     parser.add_argument("--dataset", type=str, default="sine")
     parser.add_argument("--target_loss", type=float, default=0.0)
@@ -193,15 +204,15 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
-        print(f"\n{C_BOLD}{C_BLUE}--- Configuration du modèle LSTM ---{C_END}")
-        num_units = get_input("Nombre d'unités (units)", 32)
-        num_layers = get_input("Nombre de couches (layers)", 1)
-        num_epochs = get_input("Nombre d'époques (epochs)", 50)
-        target_loss = float(input("Perte cible [0.0]: ") or 0.0)
-        batch_size = get_input("Taille du batch", 128)
+        print(f"\n{C_BOLD}{C_BLUE}--- LSTM Model Configuration ---{C_END}")
+        num_units = get_input("Number of units", 32)
+        num_layers = get_input("Number of layers", 1)
+        num_epochs = get_input("Number of epochs", 50)
+        target_loss = float(input("Target loss [0.0]: ") or 0.0)
+        batch_size = get_input("Batch size", 128)
         dataset_name = input("Dataset [sine]: ").lower().strip() or "sine"
         default_device = "cuda" if torch.cuda.is_available() else "cpu"
-        device_type = input(f"Choix du device [{default_device}]: ").lower().strip() or default_device
+        device_type = input(f"Device choice [{default_device}]: ").lower().strip() or default_device
         sparsity_train, sparsity_test, sparsity_mode = 0.0, 0.0, "random"
     else:
         num_units, num_layers, num_epochs, target_loss, batch_size, dataset_name = args.units or 32, args.layers, args.epochs or 50, args.target_loss, args.batch_size or 128, args.dataset
@@ -218,10 +229,10 @@ if __name__ == "__main__":
     elif dataset_name == "physionet": (x_train, y_train), (x_test, y_test), input_size, output_size = load_physionet_data(); criterion, is_classification = nn.MSELoss(), False
     else: (x_train, y_train), (x_test, y_test), input_size, output_size = generate_sine_data(); criterion, is_classification = nn.MSELoss(), False
 
-    # SAUVEGARDE DU TEST SET PROPRE
+    # SAVE CLEAN TEST SET
     eval_data_save = {"x_test": x_test, "y_test": y_test, "input_size": input_size, "output_size": output_size, "is_classification": is_classification}
 
-    # Appliquer la robustesse (Option B)
+    # Apply robustness (Option B)
     x_train = apply_sparsity(x_train, sparsity_train, sparsity_mode)
     x_test_sparsified = apply_sparsity(x_test, sparsity_test, sparsity_mode)
 
@@ -276,17 +287,18 @@ if __name__ == "__main__":
     mae = mean_absolute_error(all_targets, all_preds) if (SKLEARN_AVAILABLE and not is_classification) else None
     flops_stats["evaluation"] = {"test_loss": avg_test_loss, "test_accuracy_pct": accuracy, "f1_score_macro": f1, "mae": mae}
 
-    print(f"\n{C_BOLD}--- Évaluation Finale ---{C_END}")
+    print(f"\n{C_BOLD}--- Final Evaluation ---{C_END}")
     if is_classification: print(f"{C_BOLD}Test Accuracy:{C_END} {C_GREEN}{accuracy:.2f}%{C_END}")
     else: print(f"{C_BOLD}Test MSE:{C_END} {C_GREEN}{avg_test_loss:.6f}{C_END}")
+    print(f"Final Test Loss: {avg_test_loss:.6f}")
 
-    # NOM DU FICHIER AVEC SPARSITY
+    # FILENAME WITH SPARSITY
     base_filename = f"lstm_{dataset_name}_spT{int(sparsity_train*100)}_spTe{int(sparsity_test*100)}_{sparsity_mode}_{num_epochs}e_{num_units}u_{num_layers}L_{device.type}"
     subfolder = f"{int(sparsity_train*100)}_{sparsity_mode}"
     output_dir = os.path.join("results", "lstm", dataset_name, subfolder)
     os.makedirs(output_dir, exist_ok=True)
 
-    # Sauvegarde des Poids et Données
+    # Save Weights and Data
     torch.save(model.state_dict(), os.path.join(output_dir, f"weights_{base_filename}.pt"))
     torch.save(eval_data_save, os.path.join(output_dir, f"eval_data_{base_filename}.pt"))
 
